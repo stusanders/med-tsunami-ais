@@ -219,6 +219,8 @@ def _benchmark_tables_html(out_dir: Path) -> str:
         solver_rows.append(
             {
                 "Tier": r["name"],
+                "Machine": r.get("machine", ""),
+                "Grid": r.get("grid_label", ""),
                 "Batch B": r.get("batch_size", ""),
                 "s / scenario": r.get("seconds_per_scenario", np.nan),
                 "Cell updates / s (M)": (r.get("cell_updates_per_s") or np.nan) / 1e6,
@@ -230,13 +232,20 @@ def _benchmark_tables_html(out_dir: Path) -> str:
     for r in recs:
         if r.get("workload") != "scoring":
             continue
+        if r.get("extrapolated_from_two_point_slope"):
+            note = "Two-point slope extrapolation from K2=8"
+        elif r.get("tier") == "vec_no_prefix_cpu":
+            note = "Vectorised NumPy, loops over t (no prefix scan)"
+        else:
+            note = "Measured full catalogue (matmul + prefix scan)"
         scoring_rows.append(
             {
                 "Tier": r["name"],
+                "Machine": r.get("machine", ""),
                 "E (events)": r.get("E", ""),
                 "K / K2": f"{r.get('K', '')} / {r.get('K2', '')}",
                 "s / 100 events": r.get("seconds_per_100_events", np.nan),
-                "Note": "Two-point slope extrapolation from K2=8" if r.get("extrapolated_from_two_point_slope") else "Measured full catalogue",
+                "Note": note,
             }
         )
 
@@ -251,26 +260,47 @@ def _benchmark_tables_html(out_dir: Path) -> str:
     sc_sum = summary.get("scoring", {})
     so_sum = summary.get("solver", {})
     bullets = []
-    if sc_sum.get("algo_speedup_cpu"):
+    if so_sum.get("hw_speedup_same_machine_colab"):
+        grid_tag = (
+            "synthetic flat 360×750 grid, R=20,000 from <code>outputs/validation/gpu_check.json</code> "
+            "(to be replaced by Stream B's real-grid <code>--gpu</code> run)"
+            if so_sum.get("gpu_from_flat_fallback")
+            else "real 390×795 grid"
+        )
+        bw_str = ""
+        if so_sum.get("gpu_bandwidth_gb_s"):
+            bw_str = f", {so_sum['gpu_bandwidth_gb_s']:.1f} GB/s ({so_sum.get('gpu_bandwidth_pct_peak', 0):.1f}% of peak)"
         bullets.append(
-            f"<strong>Scoring algorithmic speedup (CPU loops → matmul + prefix scan):</strong> "
-            f"{sc_sum['algo_speedup_cpu']:,.0f}× (direct slice measured: {sc_sum.get('direct_slice_algo_speedup', 0):.0f}×)."
+            f"<strong>Solver same-machine GPU speedup ({grid_tag}):</strong> "
+            f"Colab 2-vCPU ({so_sum.get('colab_cpu_s_per_scen', 0):.2f} s/scen) vs "
+            f"Colab T4 B=64 ({so_sum.get('colab_gpu_s_per_scen', 0):.2f} s/scen) = "
+            f"<strong>{so_sum['hw_speedup_same_machine_colab']:.1f}×</strong>{bw_str}. "
+            f"(MacBook arm64 real 390×795 CPU: {so_sum.get('macbook_serial_cpu_s_per_scen', 0):.2f} s serial → "
+            f"{so_sum.get('macbook_batched_cpu_s_per_scen', 0):.2f} s batched.)"
+        )
+    if sc_sum.get("algo_speedup_cpu_total"):
+        vec_x = sc_sum.get("vectorisation_speedup_cpu")
+        pre_x = sc_sum.get("prefix_scan_speedup_cpu")
+        split_str = (
+            f" = <strong>{vec_x:,.0f}×</strong> vectorisation (Python loops → per-minute NumPy) "
+            f"× <strong>{pre_x:.1f}×</strong> prefix scan (O(T²) → cumsum O(T))"
+            if (vec_x and pre_x)
+            else ""
+        )
+        bullets.append(
+            f"<strong>Scoring algorithmic speedup on MacBook CPU (at E=100):</strong> "
+            f"<strong>{sc_sum['algo_speedup_cpu_total']:,.0f}×</strong>{split_str} "
+            f"(direct slice measured: {sc_sum.get('direct_slice_algo_speedup', 0):.0f}×)."
         )
     if sc_sum.get("hw_speedup_gpu_over_tensor_cpu"):
         bullets.append(
-            f"<strong>Scoring hardware speedup (CPU tensor → GPU tensor):</strong> "
+            f"<strong>Scoring hardware speedup (CPU tensor → GPU tensor, E=100):</strong> "
             f"{sc_sum['hw_speedup_gpu_over_tensor_cpu']:.1f}× (total {sc_sum.get('total_speedup_gpu_over_loop', 0):,.0f}×)."
-        )
-    if so_sum.get("hw_speedup_gpu_over_batched_cpu"):
-        bullets.append(
-            f"<strong>Solver hardware speedup (batched CPU → batched GPU):</strong> "
-            f"{so_sum['hw_speedup_gpu_over_batched_cpu']:.1f}× "
-            f"(achieved {so_sum.get('gpu_bandwidth_gb_s', 0):.1f} GB/s, {so_sum.get('gpu_bandwidth_pct_peak', 0):.1f}% of peak)."
         )
     else:
         bullets.append(
-            "<strong>GPU tier status:</strong> awaiting Colab T4/L4 run of <code>scripts/06_benchmark.py --gpu</code> "
-            "(preliminary T4 smoke runs achieved 0.31–0.46 s/scenario vs 2.55–2.80 s/scenario on MacBook CPU)."
+            "<strong>GPU scoring tier status:</strong> awaiting Colab run of <code>scripts/06_benchmark.py --gpu</code> "
+            "(not yet timed in <code>gpu_check.json</code>)."
         )
     if hysea:
         bullets.append(
@@ -394,7 +424,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     <strong>Context (not the target case):</strong> The 23 October 2026 Palermo/Trapani evacuation (Mw 5.5, lifted after ~1 h when gauges stayed flat) illustrates the cost of seismic-only alerts. A ship network targets <em>early offshore confirmation of large tsunamis</em>; ships staying quiet cannot cancel an alert for a moderate earthquake.
   </div>
   <p>Inazu et al. (2020) proved the sideways-drift mechanism on 13 ships during the 2011 Tohoku tsunami (single-ship 3σ floor 0.1–0.3 m/s), while Hossen et al. (2021) found ship velocity alone struggled to recover Cascadia tsunamis in deep water, and Foster &amp; Thomas (2024) assessed ship GNSS height in Europe. Because large tsunamis are too rare to wait for, we simulate thousands of Mediterranean scenarios to quantify detection floors, fleet-wide false-alarm rates, warning-time gains, and the value of upgrading ships to precise GNSS.</p>
-  {_figure_html(out_dir / "cleaning_steps.png", "Standalone illustration (T24) of AIS drift cleaning: raw 10-s drift with a synthetic turn artefact (rate_of_turn × 150 m), after 1-min averaging and yaw subtraction, and after causal 45-min baseline filtering. The main simulation does not model turning and assumes post-correction noise levels.", out_dir, embed)}
+  {_figure_html(out_dir / "cleaning_steps.png", "AIS drift cleaning on the showcase Hellenic Arc Mw 8.0 run (cand 186, real grid and pool): south Crete shelf ship (61 m, peak 0.55 m/s) vs deep-water ship (2,766 m, peak 0.03 m/s), with simulation calm noise from noise.ais_noise (config-driven), synthetic turn artefact v_yaw drawn separately in Panel 1 and shaded in Panel 2, and Panel 3 showing that the 45-min causal baseline barely distorts a wave of this period.", out_dir, embed)}
 </section>
 
 <section id="c1">
@@ -432,10 +462,10 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
 
 <section id="c3">
   <h2>4. Meaningful Speed-Up &amp; What Speed Buys (Criterion 3)</h2>
-  <p>Workloads A (batched solver) and B (matched-filter scoring) are benchmarked separately across three tiers (naive reference → reshaped CPU → reshaped GPU) on the same NumPy/CuPy codebase.</p>
+  <p>Workloads A (batched solver) and B (matched-filter scoring) are benchmarked separately across tiers on the same NumPy/CuPy codebase, separating vectorisation gain, prefix-scan gain, and same-machine GPU hardware speedup.</p>
   {_benchmark_tables_html(out_dir)}
-  {_figure_html(out_dir / "benchmark.png", "Three-tier performance benchmark (T19) separating algorithmic reshaping from GPU hardware speedup for Solver (A) and Scoring (B).", out_dir, embed)}
-  {_figure_html(out_dir / "what_speed_buys.png", "What a fixed 1-hour compute budget buys: affordable scenario count (left) and resulting Map 2 binomial 95% confidence interval half-width at p = 0.90 (right).", out_dir, embed)}
+  {_figure_html(out_dir / "benchmark.png", "Performance benchmark (T19): Workload A solver (linear scale, machine-labelled bars, same-machine Colab CPU vs T4 speedup) and Workload B scoring at E=100 splitting vectorisation gain from prefix-scan gain.", out_dir, embed)}
+  {_figure_html(out_dir / "what_speed_buys.png", "What a fixed 1-hour compute budget buys: linear scenarios/hour including Colab T4 GPU (left) and scoring draws per truth event per stratum with exact formula once the library exists (right).", out_dir, embed)}
 </section>
 
 <section id="c4">
