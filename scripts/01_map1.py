@@ -1,6 +1,6 @@
 """T10 / Map 1: share of ship traffic in three depth bands, overall and within each AIS range cap.
 
-Traffic = expected vessels present (EMODnet density / hours per month x cell area), summed over wet cells of the
+Traffic = expected merchant vessels present (EMODnet 2024 passenger + cargo + tanker density / hours per month x cell area), summed over wet cells of the
 area of interest, excluding strait cells (no ships are drawn there). Bands: < 50 m, 50 to 200 m, > 200 m.
 Writes outputs/map1.png, outputs/map1_table.csv and outputs/map1.md.
 """
@@ -85,13 +85,26 @@ ax2.invert_yaxis(); ax2.set_xlim(0, 100)
 ax2.set_xlabel("share of traffic (%)"); ax2.legend(title="depth band", loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=3, fontsize=8)
 ax2.set_title("Traffic by depth band")
 save_figure(fig, out / "map1.png", "Map 1: share of Mediterranean ship traffic by water depth",
-            "Caption: share of expected ship presence (EMODnet 2024 density) in depth bands, overall and within the two AIS range caps; ships in water under 50 m are masked from the observing system.")
+            "Caption: share of expected ship presence (EMODnet 2024 merchant density: passenger, cargo, tanker) in depth bands, overall and within the two AIS range caps; ships in water under 50 m are masked from the observing system.")
 
 md = ["# Map 1: traffic share by depth band", "",
-      "Traffic = expected vessels present (EMODnet 2024 vessel density / 730 h per month x cell area), wet cells inside the area of interest "
+      "Traffic = expected vessels present (EMODnet 2024 merchant vessel density, types 8 + 9 + 10 / 730 h per month x cell area), wet cells inside the area of interest "
       f"({aoi['lon_deg'][0]} to {aoi['lon_deg'][1]} E, {aoi['lat_deg'][0]} to {aoi['lat_deg'][1]} N), strait cells removed. "
-      "EMODnet 2024 lost satellite AIS from June 2024, so far-offshore density is under-counted; the density includes anchored and moored ships.", "",
+      "EMODnet 2024 lost satellite AIS from June 2024, so far-offshore density is under-counted (2023 merchant gives 6% more ships and the same shares to within 1.5 points); the density includes anchored and moored ships. Fishing, pleasure craft, tugs and other types are excluded because the ship network is merchant ships only.", "",
       "| Subset | Expected ships | " + " | ".join(f"share {n}" for n in band_names) + " |", "|---|---|---|---|---|"]
 for r in tab.itertuples(index=False):
     md.append(f"| {r[0]} | {r[1]:.0f} | " + " | ".join(f"{100*x:.1f}%" for x in r[2:]) + " |")
+# comparison with the all-types layer (what the first version of this map used)
+import copy
+cfg_all = copy.deepcopy(cfg)
+cfg_all["paths"]["vessel_density"] = cfg["paths"]["vessel_density_all_types"]
+E_all = ships.expected_ships(ships.regrid_density(cfg_all, g), g, cfg_all) * inside * ~g.strait
+md += ["", "## Merchant only versus all vessel types (same year, 2024)", "",
+       "The ship network is merchant ships only, so the merchant layer is the one used. All types adds fishing, pleasure craft, tugs, service and other vessels, which sit mostly in shallow water.", "",
+       "| Subset | Layer | Expected ships | share < 50 m | share 50 to 200 m | share > 200 m |", "|---|---|---|---|---|---|"]
+for label, mask in [("all traffic in area of interest", np.ones_like(g.wet))] + [(f"within {c/1e3:.0f} km of coast", g.coast_dist <= c) for c in caps[::-1]]:
+    for lname, EE in [("merchant (used)", E), ("all types", E_all)]:
+        tot = EE[mask].sum()
+        sh = [EE[mask & (g.depth_band == b)].sum() / tot for b in range(3)]
+        md.append(f"| {label} | {lname} | {tot:.0f} | " + " | ".join(f"{100*x:.1f}%" for x in sh) + " |")
 (out / "map1.md").write_text("\n".join(md) + "\n")
