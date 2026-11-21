@@ -678,7 +678,7 @@ def combine_and_plot(cfg, out_dir=None):
     # Panel B: Scoring (consistent E=100 across ALL bars; splits vectorisation vs prefix scan + GPU)
     score_bars = []
     if c_loop:
-        score_bars.append(("Python loops\n(ref, E=100)\nMacBook arm64", c_loop["seconds_per_100_events"], viz.COLORS["neutral"], c_loop))
+        score_bars.append(("Python loops\n(extrap. K2=8, E=100)\nMacBook arm64", c_loop["seconds_per_100_events"], viz.COLORS["neutral"], c_loop))
     if c_mid:
         score_bars.append(("Vectorised NumPy\nno prefix scan (E=100)\nMacBook arm64", c_mid["seconds_per_100_events"], viz.COLORS["moderate"], c_mid))
     if c_tcpu:
@@ -706,7 +706,7 @@ def combine_and_plot(cfg, out_dir=None):
     if c_mid and c_tcpu:
         note_lines.append(f"Prefix scan (O(T\u00b2) \u2192 cumsum O(T), MacBook): {summary['scoring']['prefix_scan_speedup_cpu']:.1f}\u00d7")
     if c_loop and c_tcpu:
-        note_lines.append(f"Combined CPU reshaping (E=100, MacBook): {summary['scoring']['algo_speedup_cpu_total']:,.0f}\u00d7")
+        note_lines.append(f"Combined CPU reshaping (E=100, loops extrap. K2=8): {summary['scoring']['algo_speedup_cpu_total']:,.0f}\u00d7")
     if c_tgpu:
         note_lines.append(
             f"Colab {gpu_name} vs MacBook CPU (cross-machine, E=100): "
@@ -722,7 +722,7 @@ def combine_and_plot(cfg, out_dir=None):
         fig,
         out_dir / "benchmark.png",
         "Three-Tier Performance Benchmark: Solver (Workload A) and Scoring (Workload B)",
-        "Same NumPy/CuPy float32 codebase on real 390x795 grid (R=20,063); same-machine Colab 17.1x ratio is from flat 360x750 gpu_check.json. Published context: Tsunami-HySEA simulates 8 h Med Sea (10M volumes, 30 arc-sec) in 284 s on 1xV100 or 257 s on 2xP100 (Estrada et al. 2021, Sci. Rep. 11:16253, doi:10.1038/s41598-021-95729-6, Methods: Tsunami model).",
+        "Same NumPy/CuPy float32 codebase on real 390x795 grid (R=20,063); Python-loop scoring is extrapolated from K2=8 timings; same-machine Colab 17.1x ratio is from flat 360x750 gpu_check.json. Published context: Tsunami-HySEA simulates 8 h Med Sea (10M volumes, 30 arc-sec) in 284 s on 1xV100 or 257 s on 2xP100 (Estrada et al. 2021, Sci. Rep. 11:16253, doi:10.1038/s41598-021-95729-6, Methods: Tsunami model).",
     )
 
     # ---- Figure 2: outputs/what_speed_buys.png ----

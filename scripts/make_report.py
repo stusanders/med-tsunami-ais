@@ -300,9 +300,8 @@ def _benchmark_tables_html(out_dir: Path) -> str:
             else ""
         )
         bullets.append(
-            f"<strong>Scoring algorithmic speedup on MacBook CPU (at E=100):</strong> "
-            f"<strong>{sc_sum['algo_speedup_cpu_total']:,.0f}×</strong>{split_str} "
-            f"(direct slice measured: {sc_sum.get('direct_slice_algo_speedup', 0):.0f}×)."
+            f"<strong>Scoring algorithmic speedup on MacBook CPU (at E=100, Python loops extrapolated from K2=8 timings):</strong> "
+            f"<strong>{sc_sum['algo_speedup_cpu_total']:,.0f}×</strong>{split_str}."
         )
     if sc_sum.get("hw_speedup_gpu_over_tensor_cpu"):
         bullets.append(
@@ -380,6 +379,25 @@ def _reshaping_ladder_html(out_dir: Path) -> str:
 def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     out_dir = repo_path(cfg["paths"]["outputs"]) if out_dir is None else Path(out_dir)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    # Dynamic T13 first_detection.json summary (auto-updates when B reruns T13)
+    fd_path = out_dir / "first_detection.json"
+    if fd_path.exists():
+        fd = json.loads(fd_path.read_text(encoding="utf-8"))
+        fd_src = fd.get("source", {})
+        fg_s = fd.get("first_gauge_s")
+        fb_s = fd.get("first_buoy_s")
+        fg_str = f"{fg_s/60.0:.1f} min" if fg_s is not None else "none"
+        fb_str = f"{fb_s/60.0:.0f} min" if fb_s is not None else "none"
+        t13_caption = (
+            f"First detection map (T13, traffic draw 0): Hellenic Arc Mw {fd_src.get('mw', 8.0):.1f} "
+            f"(cand {fd_src.get('cand_id', 186)}, 0.81 m peak uplift; {fd.get('n_ships', 682)} ships, "
+            f"{fd.get('n_ships_peak_snr_gt1', 0)} > 1σ, max peak SNR {fd.get('max_peak_snr', 0.32):.2f}) "
+            f"alongside IOC tide gauges ({fd.get('n_gauges_triggered', 28)}/{fd.get('n_gauges', 61)} triggered, "
+            f"first at {fg_str} on η(t)−η(0)) and 2025 Ionian buoys ({fd.get('n_buoys_triggered', 1)}/{fd.get('n_buoys', 2)} triggered at {fb_str})."
+        )
+    else:
+        t13_caption = "First detection map (T13): Per-ship SNR for one Hellenic Arc Mw 8.0 scenario alongside IOC tide gauges and 2025 Ionian buoys."
 
     # Map 1 table
     map1_tbl_path = out_dir / "map1_table.csv"
@@ -489,18 +507,21 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   <div class="callout">
     <strong>Context (not the target case):</strong> The 23 October 2026 Palermo/Trapani evacuation (Mw 5.5, lifted after ~1 h when gauges stayed flat) illustrates the cost of seismic-only alerts. A ship network targets <em>early offshore confirmation of large tsunamis</em>; ships staying quiet cannot cancel an alert for a moderate earthquake.
   </div>
-  <p>Inazu et al. (2020) proved the sideways-drift mechanism on 13 ships during the 2011 Tohoku tsunami (single-ship 3σ floor 0.1–0.3 m/s), while Hossen et al. (2021) found ship velocity alone struggled to recover Cascadia tsunamis in deep water, and Foster &amp; Thomas (2024) assessed ship GNSS height in Europe. Because large tsunamis are too rare to wait for, we simulate thousands of Mediterranean scenarios to quantify detection floors, fleet-wide false-alarm rates, warning-time gains, and the value of upgrading ships to precise GNSS.</p>
-  {_figure_html(out_dir / "cleaning_steps.png", "AIS drift cleaning on the showcase Hellenic Arc Mw 8.0 run (cand 186, real grid and pool): south Crete shelf ship (61 m, peak 0.47 m/s = 4.9σ) vs deep-water ship (2,766 m, peak 0.025 m/s = 0.3σ), with simulation calm noise from noise.ais_noise (config-driven), synthetic turn artefact v_yaw drawn separately in Panel 1 and shaded in Panel 2, and Panel 3 showing that the 45-min causal baseline barely distorts a wave of this period.", out_dir, embed)}
+  <p>Inazu et al. (2020) showed the sideways-drift mechanism on 13 ships during the 2011 Tohoku tsunami (single-ship 3σ floor 0.1–0.3 m/s), while Hossen et al. (2021) found ship velocity alone struggled to recover Cascadia tsunamis in deep water, and Foster &amp; Thomas (2024) assessed ship GNSS height in Europe. Because large tsunamis are too rare to wait for, we simulate thousands of Mediterranean scenarios to quantify detection floors, fleet-wide false-alarm rates, warning-time gains, and the value of upgrading ships to precise GNSS.</p>
+  {_figure_html(out_dir / "cleaning_steps.png", "AIS drift cleaning on the showcase Hellenic Arc Mw 8.0 run (cand 186, real grid and pool): south Crete shelf ship (61 m, peak 0.47 m/s = 4.9σ — one of only 2 points exceeding 3σ in the 20,000-point pool, both on the Cretan shelf, chosen deliberately as an illustration and not from the T13 traffic draw) vs deep-water ship (2,766 m, peak 0.025 m/s = 0.3σ), with simulation calm noise from noise.ais_noise (config-driven), synthetic turn artefact v_yaw drawn separately in Panel 1 and shaded in Panel 2, and Panel 3 showing that the 45-min causal baseline barely distorts a wave of this period.", out_dir, embed)}
 </section>
 
 <section id="c1">
   <h2>2. Correctness, Validation &amp; Calibration (Criterion 1)</h2>
-  <p>Physics correctness is verified across seven checks on the spherical Arakawa C-grid linear shallow-water solver (<code>src/tsunami/solver.py</code>, <code>solver_reference.py</code>), including GPU-vs-CPU equivalence on a Colab Tesla T4. All constants live in <code>config.yaml</code> with guesses explicitly tagged <code>PLACEHOLDER</code>. Both magnitude scaling laws were verified directly against their primary literature tables: Strasser et al. (2010, <em>SRL</em> 81(6):941–950, Table 2 interface: <code>L: -2.477 + 0.585 Mw</code>, <code>W: -0.882 + 0.351 Mw</code>) and Wells &amp; Coppersmith (1994, <em>BSSA</em> 84(4):974–1002, Table 2A all slip types: <code>RLD: -2.44 + 0.59 Mw</code>, <code>RW: -1.01 + 0.32 Mw</code>). Published Hellenic Arc Mw 8–8.5 scenarios report seafloor uplift from ~1–2 m on low-dip megathrust interfaces up to ~9–10 m on steeper splay faults (Lorito et al. 2008; Shaw et al. 2008; Necmioğlu &amp; Özel 2014, 2015; Wirp et al. 2025/2026), bracketing our Gaussian dipole Mw 8 peak uplift of <strong>0.81 m</strong>. Peak uplift is <code>slip × sin(mean dip)</code> for every source: subduction arcs use EFSM20 <code>dipavg</code> (Hellenic 15°, Calabrian 13°, Cyprus 32°), while Aegean and historic sources use their fault dip. Relative to the earlier fixed <code>0.3 × slip</code> rule, Aegean candidates and Samos produce waves ~2.4–2.5× larger, Cyprus ~1.8× larger, and Hellenic and Calabrian 0.86× and 0.75× their old size (uplift mismatch is still tested in T20 sensitivity runs). Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip), so the Samos comparison is a consistency check rather than fully independent validation.</p>
+  <p>Physics correctness is verified across seven checks on the spherical Arakawa C-grid linear shallow-water solver (<code>src/tsunami/solver.py</code>, <code>solver_reference.py</code>), including GPU-vs-CPU equivalence on a Colab Tesla T4. All constants live in <code>config.yaml</code> with guesses explicitly tagged <code>PLACEHOLDER</code>. Both magnitude scaling laws were verified directly against their primary literature tables: Strasser et al. (2010, <em>SRL</em> 81(6):941–950, Table 2 interface: <code>L: -2.477 + 0.585 Mw</code>, <code>W: -0.882 + 0.351 Mw</code>) and Wells &amp; Coppersmith (1994, <em>BSSA</em> 84(4):974–1002, Table 2A all slip types: <code>RLD: -2.44 + 0.59 Mw</code>, <code>RW: -1.01 + 0.32 Mw</code>). Published Hellenic Arc Mw 8–8.5 scenarios report seafloor uplift from ~1–2 m on low-dip megathrust interfaces up to ~9–10 m on steeper splay faults (Lorito et al. 2008; Shaw et al. 2008; Necmioğlu &amp; Özel 2014, 2015; Wirp et al. 2025/2026), bracketing our Gaussian dipole Mw 8 peak uplift of <strong>0.81 m</strong>. Peak uplift is <code>slip × sin(mean dip)</code> for every source: subduction arcs use EFSM20 <code>dipavg</code> (Hellenic 15°, Calabrian 13°, Cyprus 32°), while Aegean and historic sources use their fault dip. Relative to the earlier fixed <code>0.3 × slip</code> rule, Aegean candidates and Samos produce waves ~2.4–2.5× larger, Cyprus ~1.8× larger, and Hellenic and Calabrian 0.86× and 0.75× their old size (uplift mismatch is still tested in T20 sensitivity runs). Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip), so the Samos comparison is a consistency check rather than fully independent validation. Coastal tide gauges trigger on relative sea-level change <code>η(t) − η(0)</code> (because a land-mounted gauge moves coseismically with the seafloor and water column, so any static t=0 offset does not trigger it).</p>
   <h3>Solver Validation Summary (T11)</h3>
   {_read_text_pre(out_dir / "validation.md", "<code>outputs/validation.md</code> not found.")}
   {val_figs_html}
-  <h3>Piraeus Real AIS Calibration (T05)</h3>
+  <h3>Piraeus Real AIS Calibration (T05) &amp; Filtered Noise Validation</h3>
   {_read_text_pre(out_dir / "piraeus_calibration.md", "<code>outputs/piraeus_calibration.md</code> not found.")}
+  <p><strong>Steady-ship filtered noise check (<code>outputs/noise_check_piraeus.md</code>):</strong> Applying the same 1-minute averaging and causal trailing baseline to steady Piraeus ships gives <strong>0.058–0.060 m/s</strong> robust SD (0.073 m/s plain SD), about <strong>20% below</strong> simulated calm noise at the same speed and window (0.070–0.076 m/s). Because no Saronic Gulf ship stays steady for 45 min (longest continuous steady run: 34 min), the comparison uses <code>W = 10–20 min</code> with simulation computed at the same <code>W</code>; the real residual is flat across <code>W</code>. (The 0.25 m/s quoted in T23 is the raw 10-second per-report spread before averaging and baseline removal.) Calm noise is therefore not optimistic relative to Piraeus and <code>ais_noise</code> is unchanged. Caveats: the Saronic Gulf is sheltered (open-sea currents/eddies are likely larger, bracketed by the shared-noise term and moderate/rough regimes), the check uses <code>W = 10–20 min</code>, and only steady segments are included (turning artefacts excluded, consistent with assumed yaw correction).</p>
+  {_figure_html(out_dir / "noise_check_piraeus.png", "Piraeus steady-ship drift after 1-min averaging and causal baseline (W = 10–20 min) vs simulated calm/moderate/rough noise at the same speed and window.", out_dir, embed)}
+  {_read_text_pre(out_dir / "noise_check_piraeus.md", "<code>outputs/noise_check_piraeus.md</code> not found.")}
   <h3>Real-Data Yaw Correction Check on Piraeus AIS (T23)</h3>
   {_figure_html(out_dir / "yaw_correction.png", "T23 (illustration only): Inazu et al. (2020) yaw correction on deduplicated Piraeus Oct 2017 AIS turning ships (|ROT| >= 10 deg/min). Per-vessel held-out correction collapses turning spread back to the steady-ship floor (0.24 vs 0.25 m/s).", out_dir, embed)}
   {_read_text_pre(out_dir / "yaw_correction.md", "<code>outputs/yaw_correction.md</code> not generated.")}
@@ -522,15 +543,16 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   </ol>
   <div class="grid-2">
     {_figure_html(out_dir / "sources_candidates.png", "Candidate source catalogue (T03): 1,083 candidates across 141 positions on EFSM20 Hellenic, Calabrian, and Cyprus arcs plus the coarse Aegean crustal grid.", out_dir, embed)}
-    {_figure_html(out_dir / "geometry_check.png", "Arc geometry cross-check: EFSM20 vs Slab2 Hellenic (~154 km median offset at 20 km depth, flagged as a limitation) and EFSM20 vs Maesano (2017) Calabrian (0.6–0.7 km, same INGV group).", out_dir, embed)}
+    {_figure_html(out_dir / "geometry_check.png", "Arc geometry cross-check: EFSM20 vs Slab2 Hellenic (154 km median horizontal contour offset at 20 km depth — not a bug; Slab2 is a median 23 km deeper at the same location on a ~10° dipping interface) and EFSM20 vs Maesano (2017) Calabrian (0.6–0.7 km, same INGV group).", out_dir, embed)}
   </div>
+  {_figure_html(out_dir / "slab2_overlay.png", "EFSM20 vs Slab2 depth-convention overlay on the Hellenic Arc: both depth fields are positive-down in km, deepen landward, and run parallel. Slab2 is a median 23 km deeper at the same location, moving depth contours ~130 km horizontally on a ~10° interface (a genuine model difference between seismicity-based Slab2 and EDSF-based EFSM20, not a sign or contour bug).", out_dir, embed)}
 </section>
 
 <section id="c3">
   <h2>4. Meaningful Speed-Up &amp; What Speed Buys (Criterion 3)</h2>
   <p>Workloads A (batched solver) and B (matched-filter scoring) are benchmarked separately across tiers on the same NumPy/CuPy codebase, separating vectorisation gain, prefix-scan gain, and same-machine GPU hardware speedup.</p>
   {_benchmark_tables_html(out_dir)}
-  {_figure_html(out_dir / "benchmark.png", "Performance benchmark (T19): Workload A solver (linear scale, machine-labelled bars, same-machine Colab CPU vs T4 speedup) and Workload B scoring at E=100 splitting vectorisation gain from prefix-scan gain.", out_dir, embed)}
+  {_figure_html(out_dir / "benchmark.png", "Performance benchmark (T19): Workload A solver (linear scale, machine-labelled bars, real-grid T4 vs flat-grid same-machine Colab 17.1× test) and Workload B scoring at E=100 (Python-loop tier extrapolated from K2=8 timings) splitting vectorisation gain from prefix-scan gain plus Colab T4 GPU.", out_dir, embed)}
   {_figure_html(out_dir / "what_speed_buys.png", "What a fixed 1-hour compute budget buys: linear scenarios/hour including Colab T4 GPU (left) and scoring draws per truth event per stratum with exact formula once the library exists (right).", out_dir, embed)}
   {_reshaping_ladder_html(out_dir)}
   {_figure_html(out_dir / "reshaping_ladder.png", "What Reshaping Saves: full-experiment wall-clock ladder from 137 years (fully naive CPU) down to 5.6 hours (reshaped CPU) and 60.4 min (reshaped Colab T4 including 14.1 min of template gather/aggregation across 20 calls).", out_dir, embed)}
@@ -540,11 +562,14 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   <h2>5. Scientific Value: Maps, Detectors, Historic Replays &amp; Sensitivity (Criterion 4)</h2>
 
   <h3>5.1 Map 1: Where Mediterranean Ships Can Sense a Tsunami</h3>
+  <p>The ship network uses EMODnet 2024 <strong>merchant vessels only</strong> (passenger, cargo, tanker). Across the whole area of interest, <strong>42%</strong> (42.3%) of merchant traffic sits in water shallower than 50 m (masked out), 21.5% in 50–200 m, and 36.2% deeper than 200 m (44.8% &lt; 50 m within 100 km of the coast; 50.7% within 40 km). Ship counts across sections correspond to: <strong>1,324</strong> expected merchant ships anywhere in the area of interest (including shallow water); <strong>692</strong> expected per traffic draw in the observable pool (depth ≥ 50 m, within 100 km of the coast, excluding straits); and <strong>682</strong> in T13's single Poisson draw of that pool (an earlier ~1,100 figure was all vessel types including fishing/pleasure craft and has been replaced).</p>
   {map1_tbl_html}
-  {_figure_html(out_dir / "map1.png", "Map 1 (T10): Share of EMODnet 2024 vessel traffic across depth bands (<50 m masked, 50–200 m shelf, >200 m deep water) overall and within 40 km / 100 km AIS range caps.", out_dir, embed)}
+  {_figure_html(out_dir / "map1.png", "Map 1 (T10): Share of EMODnet 2024 merchant vessel traffic across depth bands (<50 m masked: 42% overall; 50–200 m shelf; >200 m deep water) overall and within 40 km / 100 km AIS range caps.", out_dir, embed)}
 
-  <h3>5.2 Single-Scenario Signal-to-Noise Check (G2)</h3>
-  {_figure_html(out_dir / "first_detection.png", "First detection map (T13): Per-ship SNR for one Hellenic Arc Mw 8.0 scenario (cand 186, 0.81 m peak uplift; 0/682 ships > 1σ, max peak SNR 0.32) alongside IOC tide gauges (28/61 triggered) and 2025 Ionian buoys (1/2 triggered at 93 min).", out_dir, embed, "<code>outputs/first_detection.png</code> (T13) pending from Stream B.")}
+  <h3>5.2 Single-Scenario Signal-to-Noise Check (G2) &amp; Draw-to-Draw Variability</h3>
+  <p>T13 used traffic draw 0, which was unlucky: 682 ships, 0 above 1σ, and best ship SNR 0.32. Across 200 traffic draws on the same Hellenic Mw 8.0 event (<code>outputs/ships_snr_draws.md</code>), <strong>44%</strong> of draws have at least one ship above 1σ (up to 4 ships), only <strong>4%</strong> have a ship above 3σ (never more than one), and the best ship per draw has median SNR <strong>0.90σ</strong> (90th percentile <strong>1.84σ</strong>). In the whole 20,000-point receiver pool, only 2 points exceed 3σ, both on the Cretan shelf; the T24 shelf ship in Section 1 (4.9σ) is one of those two rare pool points, chosen deliberately as an illustration rather than drawn from T13 draw 0 — so Section 1 and Section 5.2 are fully consistent.</p>
+  {_figure_html(out_dir / "first_detection.png", t13_caption, out_dir, embed, "<code>outputs/first_detection.png</code> (T13) pending from Stream B.")}
+  {_figure_html(out_dir / "ships_snr_draws.png", "Distribution of single-ship peak SNR across 200 traffic draws for Hellenic Mw 8.0 (cand 186, calm): 44% of draws have >=1 ship >1σ, 4% >3σ (max 1), best-ship median 0.90σ (90th pct 1.84σ); T13 draw 0 (0.32σ) sits in the lower tail, while T24's 4.9σ ship is one of only 2 pool points >3σ on the Cretan shelf.", out_dir, embed)}
   {_figure_html(out_dir / "tsunami_animation_frames.png", "T22 (stretch): 4-frame storyboard of a Hellenic Arc Mw 8.0 tsunami crossing the eastern Mediterranean with underway AIS ships lighting up by sideways-drift SNR (full video: outputs/tsunami_animation.mp4).", out_dir, embed)}
 
   <h3>5.3 Map 2: Detection Floor by Source Location, Operator &amp; Weather Regime</h3>
@@ -575,7 +600,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     <li><strong>Weather-regime multipliers are placeholders:</strong> Calm/moderate/rough noise scaling (×1, ×1.5, ×2) has no published AIS-vs-sea-state calibration.</li>
     <li><strong>Ship current coupling:</strong> Baseline assumes ships move 100% with the tsunami current (sensitivity tested at 50% response in T20).</li>
     <li><strong>Complete AIS reporting:</strong> Baseline assumes zero dropped reports (sensitivity tested at 10% dropout and near-source outage in T20).</li>
-    <li><strong>Linear shallow-water physics:</strong> No Coriolis, dispersion, or nonlinear inundation; ship observations shallower than 50 m are masked out (~55% of EMODnet traffic).</li>
+    <li><strong>Linear shallow-water physics:</strong> No Coriolis, dispersion, or nonlinear inundation; ship observations shallower than 50 m are masked out (42% of EMODnet merchant traffic across the area of interest).</li>
     <li><strong>Gaussian dipole sources:</strong> Sized by verified Strasser (2010) / Wells &amp; Coppersmith (1994) scaling rather than full Okada (1985) dislocations (uplift mismatch and monopole vs dipole tested in T20).</li>
     <li><strong>Synthetic traffic &amp; anchorage bias:</strong> Traffic draws sample EMODnet 2024 vessel density (which lost satellite AIS after June 2024 and includes anchored/moored ships; Piraeus shows 78% of port reports &lt; 2 kn).</li>
     <li><strong>Catalogue coverage:</strong> Library covers the three subduction arcs and a coarse Aegean grid; earthquakes outside those zones are detected only via mismatched templates.</li>
@@ -583,9 +608,8 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     <li><strong>Unmodelled operational factors:</strong> Captain reactions, eastern Mediterranean GNSS/AIS jamming, internal waves in straits, and submarine landslide/volcanic tsunamis (including the ancillary landslide suspected in 1956 Amorgos).</li>
     <li><strong>Confirmation only:</strong> Ships confirm large waves only; ship silence cannot cancel a seismic tsunami warning.</li>
     <li><strong>Padded domain &amp; closed S/E boundaries:</strong> Domain is padded 1.5° west and 1° north so absorbing sponge layers sit completely outside the 12–37°E, 30–42°N area of interest; south (30°N) and east (37°E) edges are closed walls (GEBCO subset limits).</li>
-    <li><strong>Hellenic Arc geometry uncertainty:</strong> EFSM20 (<code>GRSS001</code>) and Slab2 differ by ~154 km median at 20 km depth along the Hellenic Arc, shifting candidate positions accordingly.</li>
+    <li><strong>Hellenic Arc geometry uncertainty (not a bug):</strong> Arc candidates follow the EFSM20 interface meshes. For the Hellenic Arc, conventions were verified with an overlay (<code>outputs/slab2_overlay.png</code>): Slab2 is a median 23 km deeper at the same location, which on an interface dipping ~10° moves depth contours ~130 km horizontally (~154 km median offset at 20 km depth), reflecting a genuine difference between seismicity-based Slab2 and EDSF-based EFSM20.</li>
     <li><strong>Uplift rule (<code>slip × sin(mean dip)</code>) &amp; shallow Hellenic dip caveat:</strong> Peak uplift is <code>slip × sin(mean dip)</code> for every source (arcs: EFSM20 mean interface dip — Hellenic 15°, Calabrian 13°, Cyprus 32°; Aegean and historic: fault dip), giving 0.81 m peak uplift for Hellenic Mw 8 (~2.4–2.5× larger Aegean/Samos, ~1.8× Cyprus, 0.86× Hellenic, 0.75× Calabrian relative to fixed 0.3 × slip). Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip) (Samos came out ~4× too small), so the Samos comparison is a consistency check rather than fully independent validation. Averaged only over the shallow rupture footprint, the EFSM20 Hellenic mesh dips only about 4° rather than 15°; using that would shrink Hellenic sources about 3.5×.</li>
-    <li><strong>Static initial-field gauge trigger caveat (from T13):</strong> Coastal gauges sitting directly inside a source's instantaneous t=0 subsidence lobe (e.g. Paleochora for a nearby Hellenic Mw 8 event) can trigger immediately at origin time from static coseismic sea-level drop rather than wave propagation; this inflates raw gauge speed for near-field coastal stations.</li>
   </ol>
 </section>
 </body>
