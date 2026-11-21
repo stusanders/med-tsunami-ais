@@ -405,6 +405,9 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   {val_figs_html}
   <h3>Piraeus Real AIS Calibration (T05)</h3>
   {_read_text_pre(out_dir / "piraeus_calibration.md", "<code>outputs/piraeus_calibration.md</code> not found.")}
+  <h3>Real-Data Yaw Correction Check on Piraeus AIS (T23)</h3>
+  {_figure_html(out_dir / "yaw_correction.png", "T23 (illustration only): Inazu et al. (2020) yaw correction on deduplicated Piraeus Oct 2017 AIS turning ships (|ROT| >= 10 deg/min). Per-vessel held-out correction collapses turning spread back to the steady-ship floor (0.24 vs 0.25 m/s).", out_dir, embed)}
+  {_read_text_pre(out_dir / "yaw_correction.md", "<code>outputs/yaw_correction.md</code> not generated.")}
   <h3>Anti-Inverse-Crime &amp; Held-Out Quiet-Day Protocol</h3>
   <ul>
     <li><strong>Off-grid truth events (T16):</strong> Truth runs are never library entries — Map 2 truth sources are shifted half a grid spacing along strike and +0.1 Mw, plus 50–100 random off-grid twin events.</li>
@@ -444,6 +447,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
 
   <h3>5.2 Single-Scenario Signal-to-Noise Check (G2)</h3>
   {_figure_html(out_dir / "first_detection.png", "First detection map (T13): Per-ship SNR for one Hellenic Arc Mw 8 scenario alongside IOC tide gauge and 2025 Ionian buoy trigger times.", out_dir, embed, "<code>outputs/first_detection.png</code> (T13) pending from Stream B.")}
+  {_figure_html(out_dir / "tsunami_animation_frames.png", "T22 (stretch): 4-frame storyboard of a Hellenic Arc Mw 8.0 tsunami crossing the eastern Mediterranean with underway AIS ships lighting up by sideways-drift SNR (full video: outputs/tsunami_animation.mp4).", out_dir, embed)}
 
   <h3>5.3 Map 2: Detection Floor by Source Location, Operator &amp; Weather Regime</h3>
   {map2_summary_html}
