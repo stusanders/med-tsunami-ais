@@ -74,23 +74,23 @@ if "events" in args.stages:
     thr = {(r.operator, r.range_cap_m, r.regime): {} for r in tdf.itertuples()}
     for r in tdf.itertuples():
         thr[(r.operator, r.range_cap_m, r.regime)][r.detector] = r.threshold
-    truth = pd.read_csv(truth_dir / "sources.csv").sort_values("run_id").reset_index(drop=True)
-    if args.max_events:
-        truth = truth.iloc[:args.max_events]
+    truth_full = pd.read_csv(truth_dir / "sources.csv").sort_values("run_id").reset_index(drop=True)
     tscale = SW.load_scale(truth_dir / "uplift_scale.csv", "run_id")
     tlib = SW.ScaledLibrary(scoring.Library(truth_dir), tscale)
+    # gauge and buoy triggers for every truth run (eta(t) - eta(0)); fails fast if the eta(0) bookkeeping is off
     gtable = gauges.table_from_pool(pool, cfg)
     from tsunami.sources import source_eta0 as _eta0
-    e0_gb = SW.run_eta0_at_gauges(truth, pd.read_csv(truth_dir / "uplift_scale.csv"), grid, cfg, gtable, _eta0)
-    trig, first_eta = SW.gauge_table(truth, cfg, truth_dir, gtable, scale=tscale, eta0_gb=e0_gb)
-    SW.check_eta0_consistency(first_eta[:len(truth)], e0_gb.values, log)   # first_eta is already rescaled by gauge_table
-    trig, first_eta = trig[:len(truth)], first_eta[:len(truth)]
-    gcols = SW.gauge_columns(truth, trig, cfg, gtable)
-    gl = pd.DataFrame({"run_id": np.repeat(truth.run_id.values, len(gtable)), "code": np.tile(gtable.code.values, len(truth)),
-                       "rtype": np.tile(gtable.rtype.values, len(truth)), "trigger_s": trig.ravel(),
+    e0_gb = SW.run_eta0_at_gauges(truth_full, pd.read_csv(truth_dir / "uplift_scale.csv"), grid, cfg, gtable, _eta0)
+    trig, first_eta = SW.gauge_table(truth_full, cfg, truth_dir, gtable, scale=tscale, eta0_gb=e0_gb)
+    SW.check_eta0_consistency(first_eta, e0_gb.values, log)                  # first_eta is already rescaled by gauge_table
+    gcols_full = SW.gauge_columns(truth_full, trig, cfg, gtable)
+    gl = pd.DataFrame({"run_id": np.repeat(truth_full.run_id.values, len(gtable)), "code": np.tile(gtable.code.values, len(truth_full)),
+                       "rtype": np.tile(gtable.rtype.values, len(truth_full)), "trigger_s": trig.ravel(),
                        "eta_first_sample_m": first_eta.ravel()})
     gl.to_parquet(out / "gauge_triggers.parquet")
     log("gauge triggers written")
+    truth = truth_full.iloc[:args.max_events] if args.max_events else truth_full
+    gcols = gcols_full[gcols_full.run_id.isin(truth.run_id)]
     efleets = [SW.make_fleet(pool, cfg, SW.PURPOSE_TRAFFIC, i) for i in range(cfg["sweep"]["n_traffic_draws"])]
     log("event traffic draws:", [len(f.draw100.pool_idx) for f in efleets])
     SW.gather_pass(lib, cand["cand_id"].values, efleets, cfg, cache, "lib", per_ship=False)
