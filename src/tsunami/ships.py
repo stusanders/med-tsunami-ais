@@ -17,9 +17,6 @@ Pool construction:
 from dataclasses import dataclass, fields
 
 import numpy as np
-import rasterio
-from rasterio.transform import from_origin
-from rasterio.warp import Resampling, reproject
 from scipy.ndimage import gaussian_filter
 
 from . import gauges as gauges_mod
@@ -71,6 +68,9 @@ def regrid_density(cfg, grid):
 
     Area-averaged from the 1 km EPSG:3035 cells (about 12 of them per model cell).
     """
+    import rasterio                                   # only needed to build the pool, not on the GPU runtime
+    from rasterio.transform import from_origin
+    from rasterio.warp import Resampling, reproject
     with rasterio.open(repo_path(cfg["paths"]["vessel_density"])) as src:
         ny, nx = grid.depth.shape
         dst = np.full((ny, nx), np.nan, np.float32)
