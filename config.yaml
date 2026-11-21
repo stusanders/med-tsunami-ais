@@ -12,6 +12,7 @@ paths:                         # relative to the repo / worktree root
   coastline: data/raw/natural_earth/ne_10m_land/ne_10m_land.shp
   piraeus_ais: data/raw/piraeus_ais/unipi_ais_dynamic_oct2017.csv
   historic_dir: data/raw/historic
+  historic_source_files: [samos_2020_sources.json, amorgos_1956_sources.json]   # inside historic_dir; key `recommended_for_replay` (T26a)
   buoys: data/raw/historic/ionian_buoys.csv   # from T26a (Stream C): columns code,name,lon_deg,lat_deg
   grid: data/processed/grid.npz
   receiver_pool: data/processed/receiver_pool.npz

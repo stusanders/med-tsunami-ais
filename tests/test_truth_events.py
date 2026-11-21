@@ -90,8 +90,17 @@ def test_quiet_days_disjoint_and_large_enough():
     assert cal.traffic_seed.nunique() == cfg["scoring"]["n_quiet_traffic_draws"]
 
 
-def test_historic_table_uses_polarity_from_fault_type(monkeypatch):
-    c = {**cfg, "historic_sources": [dict(name="samos", lon_deg=26.8, lat_deg=37.9, strike_deg=270.0, dip_deg=37.0, mw=7.0, fault="normal"),
-                                     dict(name="crete", lon_deg=23.0, lat_deg=35.0, strike_deg=315.0, dip_deg=30.0, mw=8.3, fault="thrust")]}
-    h = TE.historic_table(FakeSources, c)
-    assert h.name.tolist() == ["samos", "crete"] and h.polarity.tolist() == [-1, 1] and (h.run_kind == "historic").all()
+def test_historic_table_uses_polarity_from_fault_type(tmp_path):
+    import json
+    for name, fault in [("samos_2020", "normal"), ("crete_365", "thrust")]:
+        (tmp_path / f"{name}_sources.json").write_text(json.dumps({"recommended_for_replay": dict(
+            lon_deg=26.8, lat_deg=37.9, strike_deg=270.0, dip_deg=37.0, mw=7.0, fault=fault, length_m=32000.0, width_m=15000.0, slip_m=1.0)}))
+    c = {**cfg, "paths": {**cfg["paths"], "historic_dir": str(tmp_path), "historic_source_files": ["samos_2020_sources.json", "crete_365_sources.json"]}}
+    import tsunami.truth_events as T
+    T.repo_path = lambda p: __import__("pathlib").Path(p)
+    try:
+        h = T.historic_table(FakeSources, c)
+    finally:
+        from tsunami.config import repo_path as rp
+        T.repo_path = rp
+    assert h.name.tolist() == ["samos_2020", "crete_365"] and h.polarity.tolist() == [-1, 1] and (h.run_kind == "historic").all()

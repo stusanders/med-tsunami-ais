@@ -3,9 +3,12 @@
 Truth events are separate solver runs, never library entries: the detector must find sources that are not on its grid
 (avoids the inverse crime). Quiet days are only lists of seeds; they need no solver run.
 """
+import json
+
 import numpy as np
 import pandas as pd
 
+from .config import repo_path
 from .geometry import haversine_m
 
 PURPOSE_TRUTH = 4          # docs/interfaces.md seed purposes: 4 = truth perturbation
@@ -100,12 +103,17 @@ def quiet_days(cfg):
 
 
 def historic_table(sources, cfg):
-    """Samos and Amorgos (and optionally Crete) truth sources from config `historic_sources` (parameters cited by T26a)."""
+    """Historic truth sources (Samos 2020, Amorgos 1956, ...) from the JSON files of T26a (`recommended_for_replay`).
+
+    The fault type in the file sets the polarity (normal fault = subsidence-first = -1) through sources.custom_source.
+    """
+    folder = repo_path(cfg["paths"]["historic_dir"])
     rows = []
-    for k, h in enumerate(cfg.get("historic_sources", [])):
+    for fname in cfg["paths"].get("historic_source_files", []):
+        h = json.loads((folder / fname).read_text())["recommended_for_replay"]
         d = sources.custom_source(h["lon_deg"], h["lat_deg"], h["strike_deg"], h["dip_deg"], h["mw"], h["fault"], cfg,
                                   length_m=h.get("length_m"), width_m=h.get("width_m"), slip_m=h.get("slip_m"))
-        rows.append(_tag(d, "historic", -1, h["name"]))
+        rows.append(_tag(d, "historic", -1, fname.removesuffix("_sources.json")))
     df = pd.DataFrame(rows)
     if len(df):
         df.insert(0, "run_id", np.arange(len(df)))
