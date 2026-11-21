@@ -128,3 +128,12 @@ def test_pool_rebuild_is_identical(tmp_path):
     a = ships.build_pool(cfg, load_grid(cfg), save=False)
     b = ships.load_pool(cfg)
     assert np.array_equal(a.lon, b.lon) and np.array_equal(a.lane_dir, b.lane_dir, equal_nan=True)
+
+
+@pytest.mark.skipif(not have_pool, reason="pool not built")
+def test_every_receiver_inside_area_of_interest_and_outside_sponge():
+    from tsunami.grid import load_grid
+    from tsunami.solver_reference import sponge_mask
+    g, pool = load_grid(cfg), ships.load_pool(cfg)
+    assert ships.in_area_of_interest(pool.lon, pool.lat, cfg).all()
+    assert not sponge_mask(g.depth.shape, cfg)[pool.cell_j, pool.cell_i].any()

@@ -51,12 +51,12 @@ have_data = repo_path(cfg["paths"]["gebco"]).exists()
 @pytest.mark.skipif(not have_data, reason="GEBCO file not present")
 def test_build_grid_contract(tmp_path):
     g = G.build_grid(cfg, save=False)
-    ny, nx = 360, 750
+    ny, nx = 390, 795
     assert g.depth.shape == g.wet.shape == g.strait.shape == g.coast_dist.shape == g.depth_band.shape == (ny, nx)
     assert g.lon.shape == (nx,) and g.lat.shape == (ny,) and g.dx.shape == (ny,) and g.cos_c.shape == (ny,)
     assert g.cos_v.shape == (ny + 1,)
     assert g.depth.dtype == np.float32 and g.wet.dtype == bool and g.depth_band.dtype == np.int8
-    assert g.lon[0] == pytest.approx(12 + 1 / 60) and g.lat[0] == pytest.approx(30 + 1 / 60)
+    assert g.lon[0] == pytest.approx(10.5 + 1 / 60) and g.lat[0] == pytest.approx(30 + 1 / 60)
     assert np.all(np.diff(g.lat) > 0) and np.all(np.diff(g.lon) > 0)
     assert g.depth[g.wet].min() >= cfg["domain"]["min_wet_depth_m"]
     assert (g.depth[~g.wet] == 0).all()
@@ -71,7 +71,7 @@ def test_known_places():
     j = lambda la: int(np.argmin(abs(g.lat - la)))
     i = lambda lo: int(np.argmin(abs(g.lon - lo)))
     assert g.depth[j(35.0), i(20.0)] > 2500                  # Ionian abyssal plain (about 3 to 4 km)
-    assert not g.wet[j(41.5), i(32.0)]                      # Black Sea is excluded
+    assert not g.wet[j(41.5), i(32.0)] and not g.wet[j(42.5), i(35.0)]   # Black Sea is excluded
     assert not g.wet[j(30.5), i(27.5)]                      # Qattara depression is not ocean
     assert g.strait[j(38.15), i(15.62)]                     # Messina
 

@@ -22,6 +22,7 @@ from scipy.ndimage import gaussian_filter
 from . import gauges as gauges_mod
 from .config import repo_path
 from .geometry import cell_index, fold_axis
+from .solver_reference import sponge_mask
 from .units import knots_to_ms
 
 SHIP, GAUGE, BUOY = 0, 1, 2
@@ -131,9 +132,18 @@ def _bilinear(field, grid, lon_deg, lat_deg):
 
 # ----------------------------------------------------------------------------- pool
 
+def in_area_of_interest(lon_deg, lat_deg, cfg):
+    a = cfg["domain"]["area_of_interest"]
+    return ((lon_deg >= a["lon_deg"][0]) & (lon_deg <= a["lon_deg"][1])
+            & (lat_deg >= a["lat_deg"][0]) & (lat_deg <= a["lat_deg"][1]))
+
+
 def _eligible(grid, cfg):
+    """Cells that may hold ships: deep enough, near the coast, not a strait, inside the area of interest and outside the sponge."""
     t = cfg["traffic"]
-    return (grid.depth >= t["min_ship_depth_m"]) & (grid.coast_dist <= t["pool_max_coast_dist_m"]) & ~grid.strait & grid.wet
+    inside = in_area_of_interest(grid.lon[None, :], grid.lat[:, None], cfg) & ~sponge_mask(grid.depth.shape, cfg)
+    return ((grid.depth >= t["min_ship_depth_m"]) & (grid.coast_dist <= t["pool_max_coast_dist_m"]) & ~grid.strait & grid.wet
+            & inside)
 
 
 def build_pool(cfg, grid, save=True):
@@ -172,7 +182,7 @@ def build_pool(cfg, grid, save=True):
             k = np.nonzero(todo)[0]
             tl = grid.lon[ii[pick[k]]] + (rng.random(len(k)) - 0.5) * grid.dlon_deg
             ta = grid.lat[jj[pick[k]]] + (rng.random(len(k)) - 0.5) * grid.dlat_deg
-            ok = ((area_id(tl, ta, cfg, grid) == areas[a]) & (_bilinear(grid.depth, grid, tl, ta) >= t["min_ship_depth_m"])
+            ok = (in_area_of_interest(tl, ta, cfg) & (area_id(tl, ta, cfg, grid) == areas[a]) & (_bilinear(grid.depth, grid, tl, ta) >= t["min_ship_depth_m"])
                   & (_bilinear(grid.coast_dist, grid, tl, ta) <= t["pool_max_coast_dist_m"]))
             lon[k[ok]], lat[k[ok]] = tl[ok], ta[ok]
             todo[k[ok]] = False                                  # points never placed keep the cell centre
