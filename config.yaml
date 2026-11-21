@@ -31,6 +31,8 @@ domain:
   lat_max_deg: 42.0
   resolution_arcmin: 2.0
   min_wet_depth_m: 10.0        # wet cells clamped to at least this depth
+  depth_band_edges_m: [50.0, 200.0]   # Map 1 bands: < 50, 50 to 200, > 200 m (PLAN.md)
+  ocean_seed: {lon_deg: 20.0, lat_deg: 35.0}   # open-sea point; wet cells not connected to it are treated as land (Qattara, Dead Sea, lakes)
   straits:                     # no ships drawn here (strong currents, internal waves)
     messina:     {lon_deg: [15.50, 15.75], lat_deg: [37.95, 38.35]}   # PLACEHOLDER box, check on grid.png
     dardanelles: {lon_deg: [26.15, 26.75], lat_deg: [40.00, 40.50]}   # PLACEHOLDER box
