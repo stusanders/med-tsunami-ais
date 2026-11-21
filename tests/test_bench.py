@@ -1,9 +1,12 @@
-"""Tests for T08 benchmark harness (src/tsunami/bench.py)."""
+"""Tests for T08 benchmark harness (src/tsunami/bench.py) and T19 plotting."""
+import importlib.util
 import time
+from pathlib import Path
 
 import numpy as np
 
 from tsunami import bench
+from tsunami.config import load_config, repo_path
 
 
 def test_timer_syncs_and_measures_elapsed():
@@ -56,3 +59,64 @@ def test_device_info_fields():
     assert info["backend"] in ("numpy", "cupy")
     assert isinstance(info["gpu"], bool)
     assert "platform" in info
+
+
+def test_combine_and_plot_cpu_plus_gpu(tmp_path):
+    script_path = repo_path("scripts/06_benchmark.py")
+    spec = importlib.util.spec_from_file_location("bench_script", script_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    cpu_payload = {
+        "device": {"backend": "numpy", "gpu": False, "platform": "test-cpu"},
+        "records": [
+            bench.record(
+                "solver_serial_cpu", 4.0, cell_updates=3.7e8, bytes_moved=2.0e10,
+                workload="solver", tier="serial_cpu", batch_size=1,
+                seconds_per_scenario=4.0, ny=390, nx=795, n_steps=1200, n_receivers=20061,
+            ),
+            bench.record(
+                "solver_batched_cpu_B1", 2.0, cell_updates=3.7e8, bytes_moved=2.0e10,
+                workload="solver", tier="batched_cpu", batch_size=1,
+                seconds_per_scenario=2.0, ny=390, nx=795, n_steps=1200, n_receivers=20061,
+            ),
+            bench.record(
+                "scoring_loop_cpu", 10000.0,
+                workload="scoring", tier="loop_cpu", E=100, K=1083, K2=1455, M=615, T=120,
+                seconds_per_100_events=10000.0, direct_slice_speedup=40.0,
+            ),
+            bench.record(
+                "scoring_tensor_cpu_E100", 1.0, bytes_moved=5.4e8,
+                workload="scoring", tier="tensor_cpu", E=100, K=1083, K2=1455, M=615, T=120,
+                seconds_per_100_events=1.0,
+            ),
+        ],
+    }
+    gpu_payload = {
+        "device": {"backend": "cupy", "gpu": True, "device_name": "Tesla T4", "peak_bandwidth_gb_s": 320.0},
+        "records": [
+            bench.record(
+                "solver_batched_gpu_B64", 16.0, cell_updates=64 * 3.7e8, bytes_moved=64 * 2.0e10,
+                peak_bandwidth_gb_s=320.0, workload="solver", tier="batched_gpu", batch_size=64,
+                seconds_per_scenario=0.25, ny=390, nx=795, n_steps=1200, n_receivers=20061,
+            ),
+            bench.record(
+                "scoring_tensor_gpu_E100", 0.05, bytes_moved=5.4e8, peak_bandwidth_gb_s=320.0,
+                workload="scoring", tier="tensor_gpu", E=100, K=1083, K2=1455, M=615, T=120,
+                seconds_per_100_events=0.05,
+            ),
+        ],
+    }
+    bench.write_json(cpu_payload, tmp_path / "benchmark_cpu.json")
+    bench.write_json(gpu_payload, tmp_path / "benchmark_gpu.json")
+
+    combined = mod.combine_and_plot(load_config(), out_dir=Path(tmp_path))
+    assert (tmp_path / "benchmark.json").exists()
+    assert (tmp_path / "benchmark.png").exists()
+    assert (tmp_path / "what_speed_buys.png").exists()
+    assert np.isclose(combined["summary"]["solver"]["algo_speedup_cpu"], 2.0)
+    assert np.isclose(combined["summary"]["solver"]["hw_speedup_gpu_over_batched_cpu"], 8.0)
+    assert np.isclose(combined["summary"]["solver"]["total_speedup_gpu_over_serial"], 16.0)
+    assert np.isclose(combined["summary"]["scoring"]["algo_speedup_cpu"], 10000.0)
+    assert np.isclose(combined["summary"]["scoring"]["hw_speedup_gpu_over_tensor_cpu"], 20.0)
+    assert np.isclose(combined["summary"]["scoring"]["total_speedup_gpu_over_loop"], 200000.0)
