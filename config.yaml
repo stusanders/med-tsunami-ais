@@ -124,9 +124,36 @@ sources:
   aegean_spacing_m: 50000.0
   aegean_exclusion_radius_m: 30000.0   # PLACEHOLDER: keep grid nodes this far from Samos and Amorgos epicentres
   kind: dipole                 # dipole | monopole (T20)
-  scaling_relation: "Strasser et al. 2010, subduction interface"  # C to confirm coefficients with citation
+  # Magnitude scaling, log10(km) = a + b * Mw. Coefficients transcribed by Stream A from the papers' tables
+  # WITHOUT the PDF at hand: VERIFY against the source before the report (marked in outputs/sources_check.md).
+  interface_scaling:           # Strasser, Arango & Bommer (2010) SRL 81(6) 941-950, Table 2, interface events
+    length_a: -2.477
+    length_b: 0.585
+    width_a: -0.882
+    width_b: 0.351
+  crustal_scaling:             # Wells & Coppersmith (1994) BSSA 84(4) 974-1002, Table 2A, all slip types (subsurface length, down-dip width)
+    length_a: -2.44
+    length_b: 0.59
+    width_a: -1.01
+    width_b: 0.32
+  crustal_max_width_m: 21000.0 # PLACEHOLDER: ~15 km seismogenic thickness / sin(45 deg)
+  moment_a: 9.1                # M0 [N m] = 10^(1.5 Mw + 9.1) (IASPEI standard, Hanks & Kanamori 1979 form)
+  moment_b: 1.5
+  arcs: {hellenic: GRSS001, calabrian: ITSS001, cyprus: CYSS001}   # EFSM20 subduction source ids
+  arc_local_radius_m: 50000.0  # triangles within this distance of a trench point set its local dip
+  arc_max_depth_for_dip_m: 25000.0   # only the shallow (tsunamigenic) part of the mesh sets the dip
+  uplift_centre_downdip_frac: 0.25   # PLACEHOLDER: uplift centre = trench point + frac * W cos(dip) down-dip
+  gaussian_sigma_frac: 0.25    # PLACEHOLDER: sigma = frac * L along strike and frac * W cos(dip) across strike
+  min_sigma_m: 7500.0          # PLACEHOLDER: at least 2 grid cells (2 arc-min ~ 3.7 km) so small sources stay resolved
+  aegean_box: {lon_deg: [22.5, 28.5], lat_deg: [35.5, 40.8]}   # PLACEHOLDER: Aegean crustal grid extent
+  aegean_strike_deg: 90.0      # PLACEHOLDER: dominant E-W normal faulting; dip direction south (Aki-Richards)
+  aegean_dip_deg: 45.0         # PLACEHOLDER
+  aegean_min_depth_m: 100.0    # PLACEHOLDER: grid nodes must sit over at least this water depth
+  exclusion_epicentres:        # from T26a (data/raw/historic/*_sources.json)
+    samos_2020:   {lon_deg: 26.784, lat_deg: 37.897}   # USGS us7000c7y0 epicentre
+    amorgos_1956: {lon_deg: 25.76, lat_deg: 36.72}     # Okal et al. (2009) GJI 178, relocated mainshock
   arc_geometry: data/raw/neamthm18/efsm20_meshes/efsm20_si_meshes.geojson  # EFSM20 subduction meshes (Basili et al. 2024, doi:10.13127/efsm20/meshes); idfs GRSS001 Hellenic, ITSS001 Calabrian, CYSS001 Cyprus
-  rigidity_pa: 3.0e10          # PLACEHOLDER: conventional crustal value
+  rigidity_pa: 3.0e+10         # PLACEHOLDER: conventional crustal value
   uplift_fraction_of_slip: 0.3 # PLACEHOLDER
   subsidence_ratio: 0.3        # PLACEHOLDER: subsidence peak / uplift peak
   landward_offset_widths: 1.0  # PLACEHOLDER: subsidence lobe centre, in rupture widths down-dip of uplift centre
