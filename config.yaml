@@ -67,10 +67,12 @@ ais_noise:
   report_interval_s: 10.0      # Piraeus Oct 2017 median for moving vessels (data/README.md); T05 to confirm
   heading_resolution_deg: 1.0  # AIS integer-degree HDG (PLAN.md, Inazu 2020)
   heading_wobble_sd_deg: 1.0   # PLAN range 0.5 to 1.5 deg (Inazu 2020); mid value chosen
-  wobble_corr_time_s: 0.0      # PLACEHOLDER: 0 = independent per report
+  wobble_corr_time_s: 0.0      # PLACEHOLDER: 0 = independent per report (only 0 is implemented)
+  heading_bias_sd_deg: 1.0     # PLACEHOLDER: constant per-ship HDG misalignment; removed exactly by the baseline filter
   shared_sd_m_s: 0.10          # PLACEHOLDER: PLAN range 0.05 to 0.15
   shared_corr_length_m: 35000.0  # PLACEHOLDER: PLAN range 20 to 50 km
-  shared_corr_time_s: 1800.0   # PLACEHOLDER: "varying slowly in time"
+  shared_corr_time_s: 1800.0   # PLACEHOLDER: "varying slowly in time" (AR(1) per minute)
+  shared_n_features: 256       # random Fourier features for the shared field (Gaussian covariance, length scale = corr length)
 
 gps:
   noise_sd_m: 0.05             # Foster and Thomas 2024 (per PLAN.md)
