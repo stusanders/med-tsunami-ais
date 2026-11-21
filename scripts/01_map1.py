@@ -94,4 +94,17 @@ md = ["# Map 1: traffic share by depth band", "",
       "| Subset | Expected ships | " + " | ".join(f"share {n}" for n in band_names) + " |", "|---|---|---|---|---|"]
 for r in tab.itertuples(index=False):
     md.append(f"| {r[0]} | {r[1]:.0f} | " + " | ".join(f"{100*x:.1f}%" for x in r[2:]) + " |")
+# comparison with the all-types layer (what the first version of this map used)
+import copy
+cfg_all = copy.deepcopy(cfg)
+cfg_all["paths"]["vessel_density"] = cfg["paths"]["vessel_density_all_types"]
+E_all = ships.expected_ships(ships.regrid_density(cfg_all, g), g, cfg_all) * inside * ~g.strait
+md += ["", "## Merchant only versus all vessel types (same year, 2024)", "",
+       "The ship network is merchant ships only, so the merchant layer is the one used. All types adds fishing, pleasure craft, tugs, service and other vessels, which sit mostly in shallow water.", "",
+       "| Subset | Layer | Expected ships | share < 50 m | share 50 to 200 m | share > 200 m |", "|---|---|---|---|---|---|"]
+for label, mask in [("all traffic in area of interest", np.ones_like(g.wet))] + [(f"within {c/1e3:.0f} km of coast", g.coast_dist <= c) for c in caps[::-1]]:
+    for lname, EE in [("merchant (used)", E), ("all types", E_all)]:
+        tot = EE[mask].sum()
+        sh = [EE[mask & (g.depth_band == b)].sum() / tot for b in range(3)]
+        md.append(f"| {label} | {lname} | {tot:.0f} | " + " | ".join(f"{100*x:.1f}%" for x in sh) + " |")
 (out / "map1.md").write_text("\n".join(md) + "\n")

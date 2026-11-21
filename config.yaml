@@ -11,6 +11,7 @@ paths:                         # relative to the repo / worktree root
   ioc_gauges: data/raw/ioc_tide_gauges/ioc_med_tide_gauges.csv
   coastline: data/raw/natural_earth/ne_10m_land/ne_10m_land.shp
   piraeus_ais: data/raw/piraeus_ais/unipi_ais_dynamic_oct2017.csv
+  vessel_density_all_types: data/raw/emodnet_vessel_density/vesseldensity_all_2024_med_clip.tif   # comparison only (Map 1 shallow-share table); NOT used for the pool
   historic_dir: data/raw/historic
   historic_source_files: [samos_2020_sources.json, amorgos_1956_sources.json]   # inside historic_dir; key `recommended_for_replay` (T26a)
   buoys: data/raw/historic/ionian_buoys.csv   # from T26a (Stream C): columns code,name,lon_deg,lat_deg
