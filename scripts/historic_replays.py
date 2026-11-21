@@ -59,8 +59,6 @@ def stage_gauges():
     rows = []
     sim_samos = eta[hist.index[hist["name"] == "samos_2020"][0]]
     hg_lo, hg_hi = rep["gauge_depth_range_m"]
-    h_s = hist[hist["name"] == "samos_2020"].iloc[0]
-    vert_scale = float(np.sin(np.deg2rad(h_s["dip_deg"])) / cfg["sources"]["uplift_fraction_of_slip"])   # vertical = slip sin(dip) versus the placeholder fraction of slip
     for k, r in enumerate(summ.itertuples()):
         h_grid = float(grid.depth[cj[k], ci[k]])
         rec_amp = max(abs(r.post_max_crest_m), abs(r.post_min_trough_m))
@@ -70,8 +68,7 @@ def stage_gauges():
                          recorded_crest_m=r.post_max_crest_m, simulated_max_abs_m=sim_amp,
                          ratio_uncorrected=sim_amp / rec_amp, green_factor=f(rep["gauge_depth_m"]),
                          ratio_corrected=sim_amp * f(rep["gauge_depth_m"]) / rec_amp,
-                         ratio_corrected_low=sim_amp * f(hg_hi) / rec_amp, ratio_corrected_high=sim_amp * f(hg_lo) / rec_amp,
-                         ratio_corrected_if_vertical_slip_sin_dip=sim_amp * f(rep["gauge_depth_m"]) * vert_scale / rec_amp))
+                         ratio_corrected_low=sim_amp * f(hg_hi) / rec_amp, ratio_corrected_high=sim_amp * f(hg_lo) / rec_amp))
     df = pd.DataFrame(rows)
     fac = rep["agreement_factor"]
     df["within_factor_2"] = (df.ratio_corrected >= 1 / fac) & (df.ratio_corrected <= fac)
@@ -88,8 +85,9 @@ def stage_gauges():
 def stage_replay():
     pool = ships.load_pool(cfg)
     cand = pd.read_csv(repo_path(cfg["paths"]["candidates"])).sort_values("cand_id").reset_index(drop=True)
-    lib = scoring.Library(repo_path(cfg["paths"]["library_dir"]))
-    hlib = scoring.Library(hist_dir)
+    lib = SW.ScaledLibrary(scoring.Library(repo_path(cfg["paths"]["library_dir"])), SW.load_scale(repo_path("data/processed/uplift_scale.csv"), "cand_id"))
+    hscale = SW.load_scale(hist_dir / "uplift_scale.csv", "run_id")
+    hlib = SW.ScaledLibrary(scoring.Library(hist_dir), hscale)
     cache = repo_path(cfg["sweep"]["cache_dir"])
     quiet = pd.read_csv(repo_path(cfg["paths"]["truth_dir"]) / "quiet_days.csv")
     qfleets = {int(i): SW.make_fleet(pool, cfg, SW.PURPOSE_QTRAFFIC, int(i)) for i in sorted(quiet.traffic_seed.unique())}
@@ -98,7 +96,7 @@ def stage_replay():
     SW.gather_pass(lib, cand["cand_id"].values, efleets, cfg, cache, "lib")
     SW.gather_pass(hlib, hist["run_id"].values, efleets, cfg, cache, "hist", per_ship=True)
     gtable = gauges.load_gauges(grid, cfg)
-    trig, _ = SW.gauge_table(hist, cfg, hist_dir, gtable)
+    trig, _ = SW.gauge_table(hist, cfg, hist_dir, gtable, scale=hscale)
     gcols = SW.gauge_columns(hist, trig[:len(hist)], cfg, gtable)
     catalogues = {"arcs_only": np.nonzero((cand["region"] != "aegean").values)[0], "arcs_plus_aegean": np.arange(len(cand))}
     frames = []
@@ -171,10 +169,6 @@ def stage_report(res=None, gdf=None):
         lines.append(f"| {r.station} | {r.snap_km:.1f} | {r.h_grid_m:.0f} | {100*r.recorded_max_abs_m:.1f} | {100*r.simulated_max_abs_m:.1f} | {r.ratio_uncorrected:.2f} | "
                      f"{r.green_factor:.2f} | {r.ratio_corrected:.2f} | {r.ratio_corrected_low:.2f} to {r.ratio_corrected_high:.2f} | {'yes' if r.within_factor_2 else 'no'} |")
     n_ok = int(gdf.within_factor_2.sum())
-    vs = gdf.ratio_corrected_if_vertical_slip_sin_dip
-    lines += ["", f"Informational (linear scaling only): the source uses a PLACEHOLDER peak uplift of {cfg['sources']['uplift_fraction_of_slip']:.2f} x slip, whereas a normal fault dipping "
-              f"{hist[hist['name']=='samos_2020'].iloc[0]['dip_deg']:.0f} deg has a vertical displacement of about slip x sin(dip). Rescaling the Samos waves by sin(dip) / {cfg['sources']['uplift_fraction_of_slip']:.2f} "
-              f"would move the corrected ratios to a median of {vs.median():.2f} ({int(((vs>=0.5)&(vs<=2)).sum())} of {len(vs)} stations within a factor of 2). This is the uplift-fraction sensitivity (T20), not a calibration.", ""]
     lines += ["", f"{n_ok} of {len(gdf)} stations agree within a factor of {rep['agreement_factor']} after the correction. The grid cannot resolve harbour resonance, "
               "so large misses at sheltered stations are expected and are a limitation, not a test of the source.", ""]
     (out / "historic_replays.md").write_text("\n".join(lines))

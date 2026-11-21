@@ -51,6 +51,39 @@ def sigmas(draw, regime, operator, cfg):
     return si, ss, np.sqrt(si.astype(np.float64) ** 2 + ss ** 2).astype(np.float32)
 
 
+# ------------------------------------------------------------------ uplift rescale
+
+def load_scale(csv_path, id_col):
+    """Per-run amplitude multipliers written by scripts/write_uplift_scales.py (uplift = slip x sin(mean dip)), indexed by run id.
+
+    The stored runs were solved with the legacy fixed uplift fraction. The model is linear, so multiplying the saved arrays
+    (block average, baseline filter and the gauge series are all linear) is exactly a re-run with the current rule.
+    """
+    s = pd.read_csv(csv_path)
+    return pd.Series(s["uplift_scale"].values.astype(np.float64), index=s[id_col].values)
+
+
+class ScaledLibrary:
+    """scoring.Library whose runs are multiplied by their uplift scale at load time: lib[ids] -> scale[ids] * runs."""
+
+    def __init__(self, lib, scale):
+        self.lib, self.scale = lib, scale
+        missing = set(lib.index["run_id"]) - set(scale.index)
+        assert not missing, f"no uplift scale for runs {sorted(missing)[:5]}"
+
+    @property
+    def index(self):
+        return self.lib.index
+
+    def __len__(self):
+        return len(self.lib)
+
+    def __getitem__(self, ids):
+        ids = np.atleast_1d(ids)
+        k = self.scale.loc[ids].values.astype(np.float32)
+        return self.lib[ids] * k[:, None, None, None]
+
+
 # ------------------------------------------------------------------ library pass
 
 def _key(f, cap, op):
@@ -201,13 +234,15 @@ def thresholds(qs, cfg):
 
 # ------------------------------------------------------------------ gauges
 
-def gauge_table(truth, cfg, gb_lib_dir, gtable):
+def gauge_table(truth, cfg, gb_lib_dir, gtable, scale=None):
     """Per truth event: trigger time of every gauge and buoy (s, inf if never), plus the sample-0 eta at each receiver."""
     lib_index = pd.read_csv(Path(gb_lib_dir) / "index.csv").sort_values("run_id")
     trig, first = [], []
     for c, rows in lib_index.groupby("chunk"):
         gb = np.load(Path(gb_lib_dir) / f"gb_{int(c):04d}.npy", mmap_mode="r")
         part = np.asarray(gb[rows["row"].values])
+        if scale is not None:                                                         # raw eta at gauges rescales like the library
+            part = part * scale.loc[rows["run_id"].values].values.astype(np.float32)[:, None, None]
         trig.append(gauges.trigger_times(part, gtable, cfg["solver"]["sample_interval_s"]))
         first.append(part[:, 0, :])
     return np.concatenate(trig), np.concatenate(first)

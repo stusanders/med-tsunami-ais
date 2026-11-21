@@ -175,3 +175,29 @@ def test_gap_and_scaling_paths_run_and_detect(world):
     assert z[z.detector == "network"].detected.mean() < 0.5
     lv = SW.map2_levels(df.assign(run_kind="truth_map2"), truth.assign(pos_id=truth.run_id, region="r"))
     assert len(lv) == 3
+
+
+def test_uplift_scale_is_applied_to_library_and_gauges(world):
+    w = world
+    lib = scoring.Library(w["root"] / "lib")
+    scale = pd.Series([0.5, 2.0, 1.0, 3.0, 0.25, 1.5], index=np.arange(6))
+    slib = SW.ScaledLibrary(lib, scale)
+    ids = np.array([4, 1, 3])
+    np.testing.assert_allclose(slib[ids], lib[ids] * np.array([0.25, 2.0, 3.0], np.float32)[:, None, None, None], rtol=1e-6)
+    assert len(slib) == len(lib) and (slib.index.run_id.values == lib.index.run_id.values).all()
+    f = SW.make_fleet(w["pool"], CFG, SW.PURPOSE_TRAFFIC, 0)
+    SW.gather_pass(lib, w["cand"].cand_id.values, [f], CFG, w["root"] / "u0", "a")
+    SW.gather_pass(slib, w["cand"].cand_id.values, [f], CFG, w["root"] / "u1", "a")
+    for op in CFG["operators"]:
+        G0 = np.asarray(SW.load_G(w["root"] / "u0", "a", f, 100000.0, op))
+        G1 = np.asarray(SW.load_G(w["root"] / "u1", "a", f, 100000.0, op))
+        np.testing.assert_allclose(G1, G0 * scale.values.astype(np.float32)[:, None, None], rtol=1e-4, atol=1e-8)
+    pool = w["pool"]
+    gt = pd.DataFrame({"code": pool.code[w["gb_idx"]], "lon_deg": pool.lon[w["gb_idx"]], "lat_deg": pool.lat[w["gb_idx"]],
+                       "rtype": pool.rtype[w["gb_idx"]], "threshold_m": 0.05, "delay_s": 180.0})
+    truth = w["truth"]
+    t0, _ = SW.gauge_table(truth, CFG, w["root"] / "truth", gt)
+    t1, _ = SW.gauge_table(truth, CFG, w["root"] / "truth", gt, scale=pd.Series([1000.0, 1000.0, 1000.0], index=[0, 1, 2]))
+    assert (t1 <= t0).all() and (t1 < t0).any()                  # a huge amplification can only trigger earlier
+    zero = SW.gauge_table(truth, CFG, w["root"] / "truth", gt, scale=pd.Series([0.0, 0.0, 0.0], index=[0, 1, 2]))[0]
+    assert np.isinf(zero).all()

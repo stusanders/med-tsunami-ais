@@ -47,7 +47,7 @@ t0 = time.perf_counter()
 log = lambda *a: print(f"[{time.perf_counter()-t0:7.0f}s]", *a, flush=True)
 log("backend gpu:", backend.GPU, "candidates", len(cand), "receivers", len(pool))
 
-lib = scoring.Library(lib_dir)
+lib = SW.ScaledLibrary(scoring.Library(lib_dir), SW.load_scale(repo_path("data/processed/uplift_scale.csv"), "cand_id"))
 assert len(lib) == len(cand), (len(lib), len(cand))
 assert (lib.index["run_id"].values == cand["cand_id"].values).all()
 thr_path = repo_path("outputs") / "thresholds.csv"
@@ -74,7 +74,8 @@ if "events" in args.stages:
     truth = pd.read_csv(truth_dir / "sources.csv").sort_values("run_id").reset_index(drop=True)
     if args.max_events:
         truth = truth.iloc[:args.max_events]
-    tlib = scoring.Library(truth_dir)
+    tscale = SW.load_scale(truth_dir / "uplift_scale.csv", "run_id")
+    tlib = SW.ScaledLibrary(scoring.Library(truth_dir), tscale)
     efleets = [SW.make_fleet(pool, cfg, SW.PURPOSE_TRAFFIC, i) for i in range(cfg["sweep"]["n_traffic_draws"])]
     log("event traffic draws:", [len(f.draw100.pool_idx) for f in efleets])
     SW.gather_pass(lib, cand["cand_id"].values, efleets, cfg, cache, "lib", per_ship=False)
@@ -83,7 +84,7 @@ if "events" in args.stages:
     log("truth pass done")
     ttag = "truth" + (f"_{args.max_events}" if args.max_events else "")
     gtable = gauges.load_gauges(grid, cfg)
-    trig, first_eta = SW.gauge_table(truth, cfg, truth_dir, gtable)
+    trig, first_eta = SW.gauge_table(truth, cfg, truth_dir, gtable, scale=tscale)
     trig, first_eta = trig[:len(truth)], first_eta[:len(truth)]
     gcols = SW.gauge_columns(truth, trig, cfg, gtable)
     gl = pd.DataFrame({"run_id": np.repeat(truth.run_id.values, len(gtable)), "code": np.tile(gtable.code.values, len(truth)),
