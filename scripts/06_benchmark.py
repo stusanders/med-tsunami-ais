@@ -45,14 +45,19 @@ TSUNAMI_HYSEA_CONTEXT = {
     "citation": (
         "Estrada, F., Gonzalez-Vida, J. M., Pelaez, J. A., Galindo-Zaldivar, J., Ortega, S., "
         "Macias, J., Vazquez, J. T., & Ercilla, G. (2021), Scientific Reports 11:16253, "
-        "doi:10.1038/s41598-021-95729-6"
+        "doi:10.1038/s41598-021-95729-6 (Methods: Tsunami model)"
+    ),
+    "verbatim_quote": (
+        "By means of this very efficient implementation, the model is able to simulate 8 h of real time "
+        "tsunami in the Mediterranean Sea (in a mesh with 10 million volumes and a resolution of 30 arc-sec) "
+        "in 257 s using two NVIDIA Tesla P100, or even in 284 s with one NVIDIA Tesla V100."
     ),
     "med_10M_volumes_30arcsec_8h_1xV100_s": 284.0,
     "med_10M_volumes_30arcsec_8h_2xP100_s": 257.0,
     "ftrt_ratio_1xV100": 28800.0 / 284.0,
     "notes": (
-        "Nonlinear shallow-water FV solver: 8 h real-time Mediterranean Sea tsunami on a 10M-volume, "
-        "30 arc-sec mesh in 284 s on 1x NVIDIA Tesla V100 (or 257 s on 2x NVIDIA Tesla P100)."
+        "Nonlinear shallow-water FV solver: 8 h real-time Mediterranean Sea tsunami (10M volumes, "
+        "30 arc-sec) in 284 s on 1x NVIDIA Tesla V100 or 257 s on 2x NVIDIA Tesla P100."
     ),
 }
 
@@ -491,18 +496,33 @@ def combine_and_plot(cfg, out_dir=None):
 
     cpu = bench.read_json(cpu_path) if cpu_path.exists() else None
     gpu = bench.read_json(gpu_path) if gpu_path.exists() else None
+    gpu_check_fallback = _load_gpu_check_fallback(out_dir)
     gpu_is_fallback = False
     if gpu is None:
-        gpu = _load_gpu_check_fallback(out_dir)
+        gpu = gpu_check_fallback
         gpu_is_fallback = gpu is not None
     if cpu is None and gpu is None:
         raise FileNotFoundError("No benchmark JSON found. Run --cpu or --gpu first.")
 
+    gpu_name = gpu["device"].get("device_name", "GPU") if gpu else "GPU"
+
+    # Backfill machine & grid_label on records loaded from older GPU/CPU JSONs
     recs = []
     if cpu:
-        recs.extend(cpu["records"])
+        for r in cpu["records"]:
+            rc = dict(r)
+            rc.setdefault("machine", "MacBook arm64")
+            if rc.get("workload") == "solver" and "grid_label" not in rc and "ny" in rc and "nx" in rc:
+                rc["grid_label"] = f"real {rc['ny']}x{rc['nx']}, R={int(rc.get('n_receivers', 0)):,}"
+            recs.append(rc)
     if gpu:
-        recs.extend(gpu["records"])
+        for r in gpu["records"]:
+            rc = dict(r)
+            if "machine" not in rc:
+                rc["machine"] = "Colab 2-vCPU" if rc.get("tier") == "colab_cpu" else f"Colab {gpu_name}"
+            if rc.get("workload") == "solver" and "grid_label" not in rc and "ny" in rc and "nx" in rc:
+                rc["grid_label"] = f"real {rc['ny']}x{rc['nx']}, R={int(rc.get('n_receivers', 0)):,}"
+            recs.append(rc)
 
     def _best(tier, workload, key):
         sub = [r for r in recs if r.get("workload") == workload and r.get("tier") == tier]
@@ -525,20 +545,42 @@ def combine_and_plot(cfg, out_dir=None):
     c_tcpu = _match_E("tensor_cpu", 100)
     c_tgpu = _match_E("tensor_gpu", 100)
 
-    # Headline same-machine CPU-vs-GPU ratio (Colab CPU vs Colab GPU)
-    same_machine_hw_speedup = (
-        s_ccpu["seconds_per_scenario"] / s_bgpu["seconds_per_scenario"]
-        if (s_ccpu and s_bgpu)
-        else None
-    )
+    # Same-machine Colab CPU-vs-GPU ratio: use real-grid colab_cpu if measured, else flat-grid gpu_check.json reference
+    same_machine_flat_ref = None
+    if gpu_check_fallback:
+        fb_recs = gpu_check_fallback["records"]
+        fb_cpu = next((r for r in fb_recs if r.get("tier") == "colab_cpu"), None)
+        fb_gpu = min((r for r in fb_recs if r.get("tier") == "batched_gpu"), key=lambda r: r["seconds_per_scenario"], default=None)
+        if fb_cpu and fb_gpu:
+            same_machine_flat_ref = {
+                "colab_cpu_s_per_scen": fb_cpu["seconds_per_scenario"],
+                "colab_gpu_s_per_scen": fb_gpu["seconds_per_scenario"],
+                "colab_gpu_batch_size": fb_gpu["batch_size"],
+                "speedup": fb_cpu["seconds_per_scenario"] / fb_gpu["seconds_per_scenario"],
+                "grid": "synthetic flat 360x750, R=20,000 (outputs/validation/gpu_check.json)",
+            }
+
+    if s_ccpu and s_bgpu:
+        same_machine_hw_speedup = s_ccpu["seconds_per_scenario"] / s_bgpu["seconds_per_scenario"]
+        same_machine_from_flat = bool(gpu_is_fallback)
+    elif same_machine_flat_ref is not None:
+        same_machine_hw_speedup = same_machine_flat_ref["speedup"]
+        same_machine_from_flat = True
+    else:
+        same_machine_hw_speedup = None
+        same_machine_from_flat = False
 
     summary = {
         "solver": {
             "macbook_serial_cpu_s_per_scen": s_ser["seconds_per_scenario"] if s_ser else None,
             "macbook_batched_cpu_s_per_scen": s_bcpu["seconds_per_scenario"] if s_bcpu else None,
-            "colab_cpu_s_per_scen": s_ccpu["seconds_per_scenario"] if s_ccpu else None,
+            "colab_cpu_s_per_scen": s_ccpu["seconds_per_scenario"] if s_ccpu else (same_machine_flat_ref["colab_cpu_s_per_scen"] if same_machine_flat_ref else None),
             "colab_gpu_s_per_scen": s_bgpu["seconds_per_scenario"] if s_bgpu else None,
+            "colab_gpu_batch_size": s_bgpu["batch_size"] if s_bgpu else None,
+            "colab_gpu_cell_updates_per_s": s_bgpu.get("cell_updates_per_s") if s_bgpu else None,
             "gpu_from_flat_fallback": gpu_is_fallback,
+            "same_machine_ratio_from_flat_grid": same_machine_from_flat,
+            "same_machine_flat_ref": same_machine_flat_ref,
             "algo_speedup_macbook_cpu": (s_ser["seconds_per_scenario"] / s_bcpu["seconds_per_scenario"]) if (s_ser and s_bcpu) else None,
             "hw_speedup_same_machine_colab": same_machine_hw_speedup,
             "gpu_bandwidth_gb_s": s_bgpu.get("bandwidth_gb_s") if s_bgpu else None,
@@ -572,11 +614,10 @@ def combine_and_plot(cfg, out_dir=None):
     K_lbl = int(c_meta.get("K", 1083))
     K2_lbl = int(c_meta.get("K2", 1455))
     T_lbl = int(c_meta.get("T", 120))
-    gpu_name = gpu["device"].get("device_name", "GPU") if gpu else "GPU"
 
     # ---- Figure 1: outputs/benchmark.png ----
     viz.apply_style()
-    fig, (axA, axB) = plt.subplots(1, 2, figsize=(14.8, 5.6))
+    fig, (axA, axB) = plt.subplots(1, 2, figsize=(15.0, 5.8))
 
     # Panel A: Solver (LINEAR y-axis, machine labelled on every bar, labels inside axes)
     solver_bars = []
@@ -588,7 +629,7 @@ def combine_and_plot(cfg, out_dir=None):
         lbl_tag = "Colab 2-vCPU\n(flat 360\u00d7750)" if s_ccpu.get("from_gpu_check_fallback") else "Colab CPU"
         solver_bars.append((f"Batched CPU\nB={s_ccpu['batch_size']}\n{lbl_tag}", s_ccpu["seconds_per_scenario"], "#8C564B", s_ccpu))
     for r in sorted([r for r in recs if r.get("tier") == "batched_gpu"], key=lambda x: x["batch_size"]):
-        m_lbl = f"{r.get('machine', gpu_name)}\n(flat 360\u00d7750)" if r.get("from_gpu_check_fallback") else r.get("machine", gpu_name)
+        m_lbl = f"{r.get('machine', f'Colab {gpu_name}')}\n(flat 360\u00d7750)" if r.get("from_gpu_check_fallback") else r.get("machine", f"Colab {gpu_name}")
         solver_bars.append((f"Batched GPU\nB={r['batch_size']}\n{m_lbl}", r["seconds_per_scenario"], viz.COLORS["ships"], r))
 
     xs = np.arange(len(solver_bars))
@@ -596,26 +637,45 @@ def combine_and_plot(cfg, out_dir=None):
     cols = [b[2] for b in solver_bars]
     axA.bar(xs, vals, color=cols, edgecolor="#333333", linewidth=0.6)
     axA.set_xticks(xs)
-    axA.set_xticklabels([b[0] for b in solver_bars], fontsize=7.5)
+    axA.set_xticklabels([b[0] for b in solver_bars], fontsize=7.4)
     axA.set_ylabel("Wall-clock time per 2 h scenario (s, linear scale)")
-    axA.set_ylim(0.0, max(vals) * 1.38)
-    axA.set_title("Workload A: Shallow-water solver (MacBook real 390\u00d7795 vs Colab T4)", fontsize=10)
+    axA.set_ylim(0.0, max(vals) * 1.42)
+    grid_title = "synthetic flat 360\u00d7750 T4" if gpu_is_fallback else "real 390\u00d7795 grid, R=20,063"
+    axA.set_title(f"Workload A: Shallow-water solver ({grid_title})", fontsize=10)
     axA.grid(True, axis="y", linestyle=":", alpha=0.6)
     for x, (_, v, _, rec) in enumerate(solver_bars):
         cu_m = (rec.get("cell_updates_per_s") or 0.0) / 1e6
         lbl = f"{v:.2f} s\n({cu_m:.0f}M cu/s)" if cu_m < 950 else f"{v:.2f} s\n({cu_m/1000:.2f}G cu/s)"
-        axA.text(x, v + max(vals) * 0.025, lbl, ha="center", va="bottom", fontsize=7.3, fontweight="bold" if rec.get("tier") == "batched_gpu" else "normal")
-    if same_machine_hw_speedup:
-        grid_note = " (synthetic flat 360\u00d7750, R=20k)" if gpu_is_fallback else " (real 390\u00d7795 grid)"
-        box_txt = (
-            f"Same-machine GPU speedup{grid_note}:\n"
-            f"Colab 2-vCPU ({s_ccpu['seconds_per_scenario']:.2f} s) vs {gpu_name} B={s_bgpu['batch_size']} "
-            f"({s_bgpu['seconds_per_scenario']:.2f} s) = {same_machine_hw_speedup:.1f}\u00d7"
+        axA.text(x, v + max(vals) * 0.022, lbl, ha="center", va="bottom", fontsize=7.2,
+                 fontweight="bold" if rec.get("tier") == "batched_gpu" else "normal")
+
+    box_lines = []
+    if s_bgpu and not gpu_is_fallback:
+        cu_m = (s_bgpu.get("cell_updates_per_s") or 0.0) / 1e6
+        bw_pct = s_bgpu.get("bandwidth_pct_peak") or 0.0
+        box_lines.append(
+            f"Real 390\u00d7795 absolute: Colab {gpu_name} B={s_bgpu['batch_size']} = "
+            f"{s_bgpu['seconds_per_scenario']:.3f} s/scen ({cu_m:.0f}M cu/s, {bw_pct:.1f}% peak BW)"
         )
-        axA.text(0.02, 0.96, box_txt, transform=axA.transAxes, ha="left", va="top", fontsize=7.8,
+    if same_machine_hw_speedup:
+        if same_machine_from_flat and same_machine_flat_ref:
+            box_lines.append(
+                f"Same-machine Colab test (flat 360\u00d7750, R=20k, gpu_check.json): "
+                f"2-vCPU {same_machine_flat_ref['colab_cpu_s_per_scen']:.2f} s vs "
+                f"T4 B={same_machine_flat_ref['colab_gpu_batch_size']} {same_machine_flat_ref['colab_gpu_s_per_scen']:.2f} s = "
+                f"{same_machine_hw_speedup:.1f}\u00d7"
+            )
+        elif s_ccpu and s_bgpu:
+            box_lines.append(
+                f"Same-machine Colab speedup (real 390\u00d7795): "
+                f"Colab CPU {s_ccpu['seconds_per_scenario']:.2f} s vs {gpu_name} B={s_bgpu['batch_size']} "
+                f"{s_bgpu['seconds_per_scenario']:.2f} s = {same_machine_hw_speedup:.1f}\u00d7"
+            )
+    if box_lines:
+        axA.text(0.02, 0.96, "\n".join(box_lines), transform=axA.transAxes, ha="left", va="top", fontsize=7.3,
                  bbox={"boxstyle": "round,pad=0.32", "fc": "#F0F6FC", "ec": viz.COLORS["ships"]})
 
-    # Panel B: Scoring (consistent E=100 across ALL bars; splits vectorisation vs prefix scan!)
+    # Panel B: Scoring (consistent E=100 across ALL bars; splits vectorisation vs prefix scan + GPU)
     score_bars = []
     if c_loop:
         score_bars.append(("Python loops\n(ref, E=100)\nMacBook arm64", c_loop["seconds_per_100_events"], viz.COLORS["neutral"], c_loop))
@@ -624,50 +684,54 @@ def combine_and_plot(cfg, out_dir=None):
     if c_tcpu:
         score_bars.append(("Matmul + prefix scan\n(E=100)\nMacBook arm64", c_tcpu["seconds_per_100_events"], viz.COLORS["positive"], c_tcpu))
     if c_tgpu:
-        score_bars.append((f"Matmul + prefix scan\n(E=100)\n{c_tgpu.get('machine', gpu_name)}", c_tgpu["seconds_per_100_events"], viz.COLORS["ships"], c_tgpu))
+        score_bars.append((f"Matmul + prefix scan\n(E=100)\n{c_tgpu.get('machine', f'Colab {gpu_name}')}", c_tgpu["seconds_per_100_events"], viz.COLORS["ships"], c_tgpu))
 
     xb = np.arange(len(score_bars))
     vb = [b[1] for b in score_bars]
     cb = [b[2] for b in score_bars]
     axB.bar(xb, vb, color=cb, edgecolor="#333333", linewidth=0.6, width=0.56)
     axB.set_yscale("log")
-    axB.set_ylim(min(vb) * 0.35, max(vb) * 8.0)
+    axB.set_ylim(min(vb) * 0.30, max(vb) * 14.0)
     axB.set_xticks(xb)
-    axB.set_xticklabels([b[0] for b in score_bars], fontsize=8)
+    axB.set_xticklabels([b[0] for b in score_bars], fontsize=7.8)
     axB.set_ylabel("Wall-clock time for E = 100 events (s, log scale)")
     axB.set_title(f"Workload B: Matched-filter scoring (K={K_lbl}, K2={K2_lbl}, T={T_lbl} min, E=100)", fontsize=10)
     axB.grid(True, axis="y", linestyle=":", alpha=0.6)
     for x, (_, v, _, _) in enumerate(score_bars):
-        axB.text(x, v * 1.25, f"{v:,.2f} s" if v < 100 else f"{v:,.0f} s", ha="center", va="bottom", fontsize=8.2, fontweight="bold")
+        axB.text(x, v * 1.28, f"{v:,.2f} s" if v < 100 else f"{v:,.0f} s", ha="center", va="bottom", fontsize=8.2, fontweight="bold")
 
     note_lines = []
     if c_loop and c_mid:
-        note_lines.append(f"Vectorisation (loops \u2192 vec. per-min): {summary['scoring']['vectorisation_speedup_cpu']:,.0f}\u00d7")
+        note_lines.append(f"Vectorisation (loops \u2192 vec. per-min, MacBook): {summary['scoring']['vectorisation_speedup_cpu']:,.0f}\u00d7")
     if c_mid and c_tcpu:
-        note_lines.append(f"Prefix scan (O(T\u00b2) \u2192 cumsum O(T)): {summary['scoring']['prefix_scan_speedup_cpu']:.1f}\u00d7")
+        note_lines.append(f"Prefix scan (O(T\u00b2) \u2192 cumsum O(T), MacBook): {summary['scoring']['prefix_scan_speedup_cpu']:.1f}\u00d7")
     if c_loop and c_tcpu:
-        note_lines.append(f"Combined CPU reshaping (E=100): {summary['scoring']['algo_speedup_cpu_total']:,.0f}\u00d7")
+        note_lines.append(f"Combined CPU reshaping (E=100, MacBook): {summary['scoring']['algo_speedup_cpu_total']:,.0f}\u00d7")
     if c_tgpu:
-        note_lines.append(f"GPU hardware ({gpu_name} / MacBook): {summary['scoring']['hw_speedup_gpu_over_tensor_cpu']:.1f}\u00d7")
+        note_lines.append(
+            f"Colab {gpu_name} vs MacBook CPU (cross-machine, E=100): "
+            f"{summary['scoring']['hw_speedup_gpu_over_tensor_cpu']:.1f}\u00d7 "
+            f"({summary['scoring']['total_speedup_gpu_over_loop']:,.0f}\u00d7 vs loops)"
+        )
     else:
         note_lines.append("GPU scoring tier: pending Colab --gpu run")
-    axB.text(0.97, 0.96, "\n".join(note_lines), transform=axB.transAxes, ha="right", va="top", fontsize=7.8,
+    axB.text(0.97, 0.96, "\n".join(note_lines), transform=axB.transAxes, ha="right", va="top", fontsize=7.5,
              bbox={"boxstyle": "round,pad=0.32", "fc": "#F0F6FC", "ec": viz.COLORS["ships"]})
 
     viz.save_figure(
         fig,
         out_dir / "benchmark.png",
         "Three-Tier Performance Benchmark: Solver (Workload A) and Scoring (Workload B)",
-        "Same NumPy/CuPy float32 codebase; Colab T4 solver bars from outputs/validation/gpu_check.json (synthetic flat 360x750, R=20k). Published context: Tsunami-HySEA simulates 8 h Med Sea (10M volumes, 30 arc-sec) in 284 s on 1xV100 or 257 s on 2xP100 (Estrada et al. 2021, Sci. Rep. 11:16253, doi:10.1038/s41598-021-95729-6).",
+        "Same NumPy/CuPy float32 codebase on real 390x795 grid (R=20,063); same-machine Colab 17.1x ratio is from flat 360x750 gpu_check.json. Published context: Tsunami-HySEA simulates 8 h Med Sea (10M volumes, 30 arc-sec) in 284 s on 1xV100 or 257 s on 2xP100 (Estrada et al. 2021, Sci. Rep. 11:16253, doi:10.1038/s41598-021-95729-6, Methods: Tsunami model).",
     )
 
     # ---- Figure 2: outputs/what_speed_buys.png ----
     budget_s = 3600.0
     n_strata = 12
     n_event_strata = K_lbl * n_strata
-    fig2, (ax1, ax2) = plt.subplots(1, 2, figsize=(14.2, 5.4))
+    fig2, (ax1, ax2) = plt.subplots(1, 2, figsize=(14.6, 5.5))
 
-    # Panel A: Scenarios simulated in 1 hour (LINEAR axis, includes GPU bar!)
+    # Panel A: Scenarios simulated in 1 hour (LINEAR axis, real 390x795 GPU bars!)
     s_bars = []
     if s_ccpu:
         tag = "\n(flat 360\u00d7750)" if s_ccpu.get("from_gpu_check_fallback") else ""
@@ -676,9 +740,11 @@ def combine_and_plot(cfg, out_dir=None):
         s_bars.append(("MacBook arm64\nSerial ref B=1\n(real 390\u00d7795)", budget_s / s_ser["seconds_per_scenario"], viz.COLORS["neutral"]))
     if s_bcpu:
         s_bars.append((f"MacBook arm64\nBatched B={s_bcpu['batch_size']}\n(real 390\u00d7795)", budget_s / s_bcpu["seconds_per_scenario"], viz.COLORS["moderate"]))
-    if s_bgpu:
-        tag = "\n(flat 360\u00d7750)" if s_bgpu.get("from_gpu_check_fallback") else "\n(real 390\u00d7795)"
-        s_bars.append((f"Colab {gpu_name}\nCuPy B={s_bgpu['batch_size']}{tag}", budget_s / s_bgpu["seconds_per_scenario"], viz.COLORS["ships"]))
+    gpu_solver_recs = sorted([r for r in recs if r.get("tier") == "batched_gpu"], key=lambda x: x["batch_size"])
+    for idx_g, rg in enumerate(gpu_solver_recs):
+        tag = "\n(flat 360\u00d7750)" if rg.get("from_gpu_check_fallback") else "\n(real 390\u00d7795)"
+        col_g = "#74ADD1" if idx_g < len(gpu_solver_recs) - 1 else viz.COLORS["ships"]
+        s_bars.append((f"Colab {gpu_name}\nCuPy B={rg['batch_size']}{tag}", budget_s / rg["seconds_per_scenario"], col_g))
 
     x1 = np.arange(len(s_bars))
     y1 = [b[1] for b in s_bars]
@@ -686,14 +752,14 @@ def combine_and_plot(cfg, out_dir=None):
     ax1.axhline(K_lbl, color=viz.COLORS["negative"], ls="--", lw=1.2, label=f"Full library ({K_lbl:,} candidates)")
     ax1.axhline(2 * K_lbl + 60, color=viz.COLORS["truth"], ls=":", lw=1.2, label=f"Library + truth + historic (~{2*K_lbl+60:,} runs)")
     ax1.set_xticks(x1)
-    ax1.set_xticklabels([b[0] for b in s_bars], fontsize=8)
+    ax1.set_xticklabels([b[0] for b in s_bars], fontsize=7.6)
     ax1.set_ylabel("2-hour scenarios simulated per hour (linear scale)")
-    ax1.set_ylim(0.0, max(y1) * 1.22)
-    ax1.set_title("A. Scenarios simulated in a 1-hour compute budget")
+    ax1.set_ylim(0.0, max(y1) * 1.24)
+    ax1.set_title("A. Scenarios simulated in a 1-hour compute budget (real 390\u00d7795)")
     ax1.legend(loc="upper left", fontsize=8, framealpha=0.92)
     ax1.grid(True, axis="y", linestyle=":", alpha=0.6)
     for x, v in zip(x1, y1):
-        ax1.text(x, v + max(y1) * 0.022, f"{v:,.0f}", ha="center", va="bottom", fontsize=9, fontweight="bold")
+        ax1.text(x, v + max(y1) * 0.022, f"{v:,.0f}", ha="center", va="bottom", fontsize=8.8, fontweight="bold")
 
     # Panel B: Scoring draws per truth event per stratum in 1 hour (once library exists)
     n_grid = np.logspace(0.0, 3.6, 250)
@@ -712,7 +778,7 @@ def combine_and_plot(cfg, out_dir=None):
         n_loop = _draws_in_1h(c_loop["seconds_per_100_events"])
         hrs_1draw = (n_event_strata * (c_loop["seconds_per_100_events"] / 100.0)) / 3600.0
         ax2.scatter([1.0], [58.8], marker="<", s=95, color=viz.COLORS["neutral"], edgecolors="k", zorder=5,
-                    label=f"Python loops (MacBook): {n_loop:.4f} draws/hr (<1; ~{hrs_1draw:.0f} h for 1 draw)")
+                    label=f"Python loops (MacBook): {n_loop:.4f} draws/h (<1; ~{hrs_1draw:.0f} h/draw)")
     if c_mid:
         n_mid = _draws_in_1h(c_mid["seconds_per_100_events"])
         if n_mid >= 1.0:
@@ -722,7 +788,7 @@ def combine_and_plot(cfg, out_dir=None):
         else:
             hrs_mid = (n_event_strata * (c_mid["seconds_per_100_events"] / 100.0)) / 3600.0
             ax2.scatter([1.0], [52.0], marker="<", s=85, color=viz.COLORS["moderate"], edgecolors="k", zorder=5,
-                        label=f"Vec. NumPy no-prefix (MacBook, E=100): {n_mid:.2f} draws/hr ({hrs_mid:.1f} h/draw)")
+                        label=f"Vec. NumPy no-prefix (MacBook, E=100): {n_mid:.2f} draws/h ({hrs_mid:.1f} h/draw)")
     if c_tcpu:
         n_tcpu = _draws_in_1h(c_tcpu["seconds_per_100_events"])
         ci_tcpu = 100.0 * 1.96 * np.sqrt(p * (1.0 - p) / max(n_tcpu, 1.0))
@@ -732,40 +798,52 @@ def combine_and_plot(cfg, out_dir=None):
         n_tgpu = _draws_in_1h(c_tgpu["seconds_per_100_events"])
         x_gpu = min(n_tgpu, 4000.0)
         ci_gpu = 100.0 * 1.96 * np.sqrt(p * (1.0 - p) / n_tgpu)
-        ax2.scatter([x_gpu], [ci_gpu], s=105, color=viz.COLORS["ships"], edgecolors="k", zorder=6,
-                    label=f"Matmul+prefix ({gpu_name}, E=100): {n_tgpu:,.0f} draws (\u00b1{ci_gpu:.1f}%)")
+        ax2.scatter([x_gpu], [ci_gpu], s=110, color=viz.COLORS["ships"], edgecolors="k", zorder=6,
+                    label=f"Matmul+prefix (Colab {gpu_name}, E=100): {n_tgpu:,.0f} draws (\u00b1{ci_gpu:.1f}%)")
 
     ax2.axvline(100, color=viz.COLORS["ships"], ls="--", lw=1.1, label="Project target (5 traffic \u00d7 20 noise = 100)")
-    cpu_line = ""
+
+    calc_lines = [
+        "Once library exists, extra draws pay scoring only:",
+        f"draws/stratum = 3600 s / ({K_lbl:,} events \u00d7 {n_strata} strata \u00d7 t_ev)",
+    ]
     if c_tcpu:
         t_ev_ms = (c_tcpu["seconds_per_100_events"] / 100.0) * 1000.0
         s_per_draw = n_event_strata * (c_tcpu["seconds_per_100_events"] / 100.0)
-        cpu_line = f"\nMacBook matmul+prefix: t_ev={t_ev_ms:.1f} ms \u2192 {n_event_strata:,}\u00d7t_ev={s_per_draw:.0f} s/draw \u2192 {budget_s/s_per_draw:.0f} draws/h"
-    formula_txt = (
-        "Once library exists, extra draws pay scoring only:\n"
-        f"draws/stratum = 3600 s / ({K_lbl:,} events \u00d7 {n_strata} strata \u00d7 t_ev)"
-        + cpu_line
-        + ("\nGPU scoring point: awaiting B's --gpu run" if not c_tgpu else "")
-    ).strip()
-    ax2.text(0.98, 0.54, formula_txt, transform=ax2.transAxes, ha="right", va="top", fontsize=7.3,
+        calc_lines.append(f"MacBook CPU (E=100): t_ev={t_ev_ms:.1f} ms \u2192 {s_per_draw:.0f} s/draw \u2192 {budget_s/s_per_draw:.0f} draws/h")
+    if c_tgpu:
+        t_ev_ms_g = (c_tgpu["seconds_per_100_events"] / 100.0) * 1000.0
+        s_per_draw_g = n_event_strata * (c_tgpu["seconds_per_100_events"] / 100.0)
+        calc_lines.append(f"Colab {gpu_name} (E=100): t_ev={t_ev_ms_g:.2f} ms \u2192 {s_per_draw_g:.0f} s/draw \u2192 {budget_s/s_per_draw_g:,.0f} draws/h")
+    else:
+        calc_lines.append("GPU scoring point: awaiting B's --gpu run")
+
+    ax2.text(0.98, 0.49, "\n".join(calc_lines), transform=ax2.transAxes, ha="right", va="top", fontsize=7.2,
              bbox={"boxstyle": "round,pad=0.3", "fc": "#FFFDF5", "ec": "#999999"})
     ax2.set_xlabel("Traffic \u00d7 noise draws per truth event per stratum in 1 h (log scale)")
     ax2.set_ylabel("95% binomial CI half-width on 90% detection rate (%)")
     ax2.set_title("B. What scoring speed buys: Map 2 precision in 1 hour")
-    ax2.legend(loc="upper right", fontsize=7.4, framealpha=0.92)
+    ax2.legend(loc="upper right", fontsize=7.2, framealpha=0.92)
     ax2.grid(True, linestyle=":", alpha=0.6)
 
+    cap_left = (
+        f"Left: linear scenarios/h on real 390x795 grid (Colab {gpu_name} B={s_bgpu['batch_size']} = {budget_s / s_bgpu['seconds_per_scenario']:,.0f}/h at {s_bgpu['seconds_per_scenario']:.3f} s/scen vs MacBook CPU {budget_s / s_bcpu['seconds_per_scenario']:,.0f}/h)."
+        if (s_bgpu and s_bcpu and not gpu_is_fallback)
+        else f"Computed from measured wall-clock rates for {K_lbl:,} library candidates and 12 strata."
+    )
+    cap_right = (
+        f" Right: draws/stratum = 3600 / ({K_lbl:,} x 12 x t_ev) at E=100 once library is built — loops <1/h, MacBook CPU { _draws_in_1h(c_tcpu['seconds_per_100_events']):.0f}/h, Colab {gpu_name} {_draws_in_1h(c_tgpu['seconds_per_100_events']):,.0f}/h (exceeds 100-draw target)."
+        if (c_tcpu and c_tgpu)
+        else ""
+    )
     viz.save_figure(
         fig2,
         out_dir / "what_speed_buys.png",
         "What the Speed Makes Possible: Experiment Scale and Map 2 Uncertainty in a 1-Hour Budget",
-        f"Left: linear scenarios/hr (Colab T4 B=64 = {budget_s / s_bgpu['seconds_per_scenario']:,.0f}/hr from gpu_check.json flat 360x750 vs MacBook real 390x795). Right: draws/stratum = 3600 / ({K_lbl:,} x 12 x t_score_per_event) once library is built; loops cannot finish 1 draw in 1 hour."
-        if s_bgpu else
-        f"Computed from measured wall-clock rates for {K_lbl:,} library candidates and 12 strata.",
+        cap_left + cap_right,
     )
     print(f"Wrote {out_dir / 'benchmark.json'}, benchmark.png, what_speed_buys.png")
     return combined
-
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="T19 Solver and Scoring Benchmarks")
