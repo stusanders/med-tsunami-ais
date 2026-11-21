@@ -142,8 +142,10 @@ def main():
           "![](sources_candidates.png)", "",
           "## Mw 8 (arcs) and Mw 7 (Aegean) source sizes", "",
           sizes.round(2).to_markdown(index=False), "",
-          "Peak uplift is `uplift_fraction_of_slip x slip` (PLACEHOLDER 0.3) and subsidence `subsidence_ratio x uplift` "
-          "(PLACEHOLDER 0.3). A Mw 8 interface event gives about 1 m uplift and 0.3 m subsidence; published Hellenic "
+          "Peak uplift is `slip x sin(mean dip)` (arcs: EFSM20 dipavg, Hellenic 15, Calabrian 13, Cyprus 32 deg; Aegean and "
+          "historic: fault dip) and subsidence `subsidence_ratio x uplift` "
+          "(PLACEHOLDER 0.3). Samos 2020 motivated replacing the earlier fixed 0.3 x slip with this rule, so Samos is a "
+          "consistency check rather than independent validation. Published Hellenic "
           "Arc Mw 8 scenarios report seafloor uplift of order 1 to 2 m (citation to add in the report).", "",
           "## Geometry cross-check", "",
           (comp.round(1).to_markdown(index=False) if len(comp) else "no overlap found"), "",
