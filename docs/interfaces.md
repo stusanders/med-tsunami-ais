@@ -140,7 +140,7 @@ Count per area: `N_a ~ Poisson(sum of pool weight in area a)`, capped at the num
 
 ## 7. Sources (T03, C)
 
-`sources.candidate_table(cfg, grid=None, save=True) -> pandas.DataFrame`, saved to `data/processed/candidates.csv` (1,077 candidates at 140 positions: Hellenic 41, Calabrian 13, Cyprus 25 positions x 9 Mw; Aegean 61 x 6 Mw; library about 31 GB float32 on the Colab runtime). Arc positions are taken every 25 km along the trench-side edge of the EFSM20 subduction-interface meshes (`sources.arc_geometry` in config; Hellenic GRSS001, Calabrian ITSS001, Cyprus CYSS001), with strike and dip from the mesh. The row order **is** the library order, so `cand_id = 0..C-1`.
+`sources.candidate_table(cfg, grid=None, save=True) -> pandas.DataFrame`, saved to `data/processed/candidates.csv` (1,083 candidates at 141 positions: Hellenic 41, Calabrian 13, Cyprus 25 positions x 9 Mw; Aegean 62 x 6 Mw; library about 31 GB float32 on the Colab runtime). Arc positions are taken every 25 km along the trench-side edge of the EFSM20 subduction-interface meshes (`sources.arc_geometry` in config; Hellenic GRSS001, Calabrian ITSS001, Cyprus CYSS001), with strike and dip from the mesh. The row order **is** the library order, so `cand_id = 0..C-1`.
 
 | Column | Meaning |
 |---|---|

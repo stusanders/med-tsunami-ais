@@ -149,9 +149,9 @@ sources:
   aegean_strike_deg: 90.0      # PLACEHOLDER: dominant E-W normal faulting; dip direction south (Aki-Richards)
   aegean_dip_deg: 45.0         # PLACEHOLDER
   aegean_min_depth_m: 100.0    # PLACEHOLDER: grid nodes must sit over at least this water depth
-  exclusion_epicentres:        # PLACEHOLDER positions until T26a (Stream C) supplies sourced values
-    samos_2020:   {lon_deg: 26.79, lat_deg: 37.90}
-    amorgos_1956: {lon_deg: 25.85, lat_deg: 36.65}
+  exclusion_epicentres:        # from T26a (data/raw/historic/*_sources.json)
+    samos_2020:   {lon_deg: 26.784, lat_deg: 37.897}   # USGS us7000c7y0 epicentre
+    amorgos_1956: {lon_deg: 25.76, lat_deg: 36.72}     # Okal et al. (2009) GJI 178, relocated mainshock
   arc_geometry: data/raw/neamthm18/efsm20_meshes/efsm20_si_meshes.geojson  # EFSM20 subduction meshes (Basili et al. 2024, doi:10.13127/efsm20/meshes); idfs GRSS001 Hellenic, ITSS001 Calabrian, CYSS001 Cyprus
   rigidity_pa: 3.0e+10         # PLACEHOLDER: conventional crustal value
   uplift_fraction_of_slip: 0.3 # PLACEHOLDER

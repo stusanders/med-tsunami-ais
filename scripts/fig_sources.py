@@ -164,7 +164,7 @@ def main():
           "- Scaling coefficients in `config.yaml` (`sources.interface_scaling`, `sources.crustal_scaling`) were "
           "transcribed from Strasser et al. (2010) Table 2 and Wells & Coppersmith (1994) Table 2A without the PDFs at hand.",
           "- Aegean strike, dip and box, uplift fraction, subsidence ratio, Gaussian widths and the Samos/Amorgos "
-          "exclusion epicentres are PLACEHOLDERs (the epicentres will come from T26a)."]
+          "the Samos and Amorgos exclusion epicentres now come from T26a (USGS; Okal et al. 2009)."]
     (OUT / "sources_check.md").write_text("\n".join(md))
     print(counts)
     print(sizes.round(2).to_string(index=False))
