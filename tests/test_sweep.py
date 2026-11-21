@@ -201,3 +201,33 @@ def test_uplift_scale_is_applied_to_library_and_gauges(world):
     assert (t1 <= t0).all() and (t1 < t0).any()                  # a huge amplification can only trigger earlier
     zero = SW.gauge_table(truth, CFG, w["root"] / "truth", gt, scale=pd.Series([0.0, 0.0, 0.0], index=[0, 1, 2]))[0]
     assert np.isinf(zero).all()
+
+
+def test_scaled_legacy_run_equals_new_rule_run(world):
+    """A run built with the legacy uplift fraction, multiplied by uplift_scale, equals a run built with the new rule (linearity)."""
+    from tsunami import sources
+    w = world
+    grid, pool = w["grid"], w["pool"]
+    cfg = {**CFG, "solver": {**CFG["solver"], "t_end_s": 1800.0}, "library": {**CFG["library"], "n_minutes": 30}}
+    legacy = cfg["sources"]["legacy_uplift_fraction_of_slip"]
+    row = dict(lon_deg=float(grid.lon[25]), lat_deg=float(grid.lat[18]), strike_deg=40.0, dip_deg=20.0, width_m=40000.0, length_m=80000.0,
+               slip_m=2.0, polarity=1)
+    new_row = dict(row, uplift_dip_deg=15.0)                                          # new rule: slip x sin(15 deg)
+    old_row = dict(row, uplift_dip_deg=float(np.rad2deg(np.arcsin(legacy))))          # legacy: slip x 0.3
+    scale = sources.uplift_scale(new_row, cfg)
+    assert scale == pytest.approx(np.sin(np.deg2rad(15.0)) / legacy)
+    eta_new, eta_old = sources.source_eta0(grid, new_row, cfg), sources.source_eta0(grid, old_row, cfg)
+    np.testing.assert_allclose(eta_new, eta_old * scale, rtol=1e-5, atol=1e-7)       # same shape, scaled amplitude
+    solver = Solver(grid, ref.make_sampler(grid, pool), cfg, xp=np)
+    gb_idx = np.nonzero(pool.rtype > 0)[0]
+    rec_new, gb_new = solver.run_library(eta_new[None], gb_idx)
+    rec_old, gb_old = solver.run_library(eta_old[None], gb_idx)
+    tol = 1e-5 * float(np.abs(rec_new).max())
+    np.testing.assert_allclose(np.asarray(rec_old) * scale, np.asarray(rec_new), atol=tol)       # rec of the legacy run, scaled
+    np.testing.assert_allclose(np.asarray(gb_old) * scale, np.asarray(gb_new), atol=1e-5 * float(np.abs(gb_new).max()))   # and the raw gauge series
+    # and through the loader used in T17: a one-run library written with the legacy source, scaled on load
+    d = w["root"] / "legacy_one"
+    t = pd.DataFrame({"run_id": [0], **{k: [v] for k, v in old_row.items()}})
+    LB.build_stage("t", t, d, solver, grid, cfg, gb_idx, lambda g, r, c, kind=None: sources.source_eta0(g, r, c), batch=1)
+    loaded = SW.ScaledLibrary(scoring.Library(d), pd.Series([scale], index=[0]))[[0]]
+    np.testing.assert_allclose(loaded, np.asarray(rec_new), atol=tol)

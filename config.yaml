@@ -213,6 +213,7 @@ replay:                        # T26 historic replays
   gauge_depth_m: 3.0           # PLACEHOLDER: depth at the real tide gauge used in the Green's-law correction (h_grid / h_gauge)^(1/4); harbour gauges are a few metres deep
   gauge_depth_range_m: [2.0, 6.0]   # PLACEHOLDER range reported alongside, so the result does not hinge on one guess
   exclude_stations: [aigi, itea, pano, maer, bodri]   # Gulf of Corinth (aigi, itea, pano: closed to the Aegean at this resolution), Marmara (maer), partial series (bodri)
+  max_comparable_snap_km: 5.0  # PLACEHOLDER: a station snapped further than this onto the open coast is not comparable at 2 arc-min (Marmaris: enclosed bay)
   agreement_factor: 2.0        # PLAN.md: accept simulated within a factor of 2 of recorded
   summary_csv: data/raw/historic/ioc_samos_2020/summary_samos_2020_ioc.csv
 

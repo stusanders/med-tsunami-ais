@@ -71,6 +71,7 @@ def stage_gauges():
                          ratio_corrected_low=sim_amp * f(hg_hi) / rec_amp, ratio_corrected_high=sim_amp * f(hg_lo) / rec_amp))
     df = pd.DataFrame(rows)
     fac = rep["agreement_factor"]
+    df["comparable"] = df.snap_km <= rep["max_comparable_snap_km"]
     df["within_factor_2"] = (df.ratio_corrected >= 1 / fac) & (df.ratio_corrected <= fac)
     df.to_csv(out / "historic_samos_gauges.csv", index=False)
     # Amorgos has no recorded gauge series; report the simulated amplitudes at the same stations for reference
@@ -168,10 +169,18 @@ def stage_report(res=None, gdf=None):
               "|---|---|---|---|---|---|---|---|---|---|"]
     for r in gdf.itertuples():
         lines.append(f"| {r.station} | {r.snap_km:.1f} | {r.h_grid_m:.0f} | {100*r.recorded_max_abs_m:.1f} | {100*r.simulated_max_abs_m:.1f} | {r.ratio_uncorrected:.2f} | "
-                     f"{r.green_factor:.2f} | {r.ratio_corrected:.2f} | {r.ratio_corrected_low:.2f} to {r.ratio_corrected_high:.2f} | {'yes' if r.within_factor_2 else 'no'} |")
-    n_ok = int(gdf.within_factor_2.sum())
-    lines += ["", f"{n_ok} of {len(gdf)} stations agree within a factor of {rep['agreement_factor']} after the correction. The grid cannot resolve harbour resonance, "
-              "so large misses at sheltered stations are expected and are a limitation, not a test of the source.", ""]
+                     f"{r.green_factor:.2f} | {r.ratio_corrected:.2f} | {r.ratio_corrected_low:.2f} to {r.ratio_corrected_high:.2f} | {('yes' if r.within_factor_2 else 'no') if r.comparable else 'not comparable at this resolution'} |")
+    comp = gdf[gdf.comparable]
+    n_ok = int(comp.within_factor_2.sum())
+    lines += ["", f"{n_ok} of {len(comp)} comparable stations agree within a factor of {rep['agreement_factor']} after the correction "
+              f"(uplift = slip x sin(dip) = {float(np.sin(np.deg2rad(hist[hist['name']=='samos_2020'].iloc[0]['dip_deg']))):.2f} x slip). The grid cannot resolve harbour resonance, "
+              "so large misses at sheltered stations are expected and are a limitation, not a test of the source.", "",
+              "Stations marked not comparable (snapped more than "
+              f"{rep['max_comparable_snap_km']} km): **Marmaris** (`mrms`) sits inside the enclosed Marmaris Bay; at 2 arc-min its own cell is land, so it was snapped "
+              "onto the open coast outside the bay, where the wave is not the one the gauge recorded. This is a resolution limit, not a model failure.", "",
+              "**Heraklion** (`hrak`) is snapped correctly (0.3 km, 24 m deep) yet still comes out several times too small. The simulated wave reaches the north coast of Crete "
+              "through the Cyclades, whose narrow passages are partly closed on a 2 arc-min grid, and the Heraklion record also contains harbour resonance; "
+              "Ierapetra on the south-east coast behaves the same way. These are listed as misses, with that likely cause, not as tuned away.", ""]
     (out / "historic_replays.md").write_text("\n".join(lines))
     print("\n".join(lines[:60]))
 
