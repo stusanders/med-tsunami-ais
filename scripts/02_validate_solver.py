@@ -259,17 +259,25 @@ def check_hellenic():
     s = Solver(grid, ref.make_sampler(grid, pool), CFG)
     times = [0, 600, 1200, 2400, 3600, 5400]
     snaps = backend.to_numpy(s.snapshots(eta0[None], times))[0]
-    lim = float(np.abs(snaps[1:]).max())
-    fig, axes = plt.subplots(2, 3, figsize=(13, 6.5), sharex=True, sharey=True)
+    deep = grid.wet & (grid.depth > 200.0)
+    lim = float(np.percentile(np.abs(snaps[1:][:, deep]), 99.5))      # open-sea scale; coasts saturate
+    fig, axes = plt.subplots(2, 3, figsize=(14, 7), sharex=True, sharey=True, layout="constrained")
     for ax, t, e in zip(axes.flat, times, snaps):
         e = np.where(grid.wet, e, np.nan)
         im = ax.pcolormesh(grid.lon, grid.lat, e, cmap="RdBu_r", vmin=-lim, vmax=lim, shading="auto")
         ax.set_title(f"t = {t / 60:.0f} min")
         ax.set_xlabel("longitude (deg E)")
         ax.set_ylabel("latitude (deg N)")
-    fig.colorbar(im, ax=axes, label="eta (m)", shrink=0.8)
-    f = save(fig, "check6_hellenic_mw8.png", f"Check 6: Hellenic Arc Mw 8 at ({row.lon_deg:.2f} E, {row.lat_deg:.2f} N)",
-             "Linear shallow-water solution on the 2 arc-min grid; colour scale set by t > 0 frames.")
+        ax.set_facecolor("0.85")
+    fig.colorbar(im, ax=axes, label="eta (m)", shrink=0.8, extend="both")
+    fig.get_layout_engine().set(rect=(0, 0.035, 1, 1))
+    fig.suptitle(f"Check 6: Hellenic Arc Mw 8 at ({row.lon_deg:.2f} E, {row.lat_deg:.2f} N)")
+    fig.text(0.01, 0.005, f"Linear shallow-water solution, 2 arc-min grid; colour limits = 99.5th percentile of |eta| in water "
+             f"deeper than 200 m (+-{lim:.2f} m), so coastal shoaling saturates.", fontsize=8, style="italic")
+    path = FIG / "check6_hellenic_mw8.png"
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+    f = "validation/check6_hellenic_mw8.png"
     txt = (f"source peak uplift **{eta0.max():.2f} m**, peak subsidence **{eta0.min():.2f} m**; "
            f"compare with a published Hellenic Mw 8 scenario amplitude (citation to add).")
     return True, txt, f

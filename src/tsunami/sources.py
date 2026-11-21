@@ -1,504 +1,283 @@
-"""Earthquake tsunami sources: EFSM20 arcs, Aegean crustal grid, Gaussian dipole (T03, Stream C).
+"""Earthquake sources as Gaussian dipoles (T03). docs/interfaces.md section 7.
 
-Contract (docs/interfaces.md section 7):
-    sources.candidate_table(cfg) -> pandas.DataFrame
-    sources.source_eta0(grid, row, cfg, kind=None, polarity=None) -> (ny, nx) float32
-    sources.perturb(row, along_strike_m, dmw, cfg) -> dict
-    sources.custom_source(lon_deg, lat_deg, strike_deg, dip_deg, mw, fault, cfg,
-                          length_m=None, width_m=None, slip_m=None) -> dict
-    sources.dipole_volume(eta0, grid) -> (uplift_m3, subsidence_m3, net_m3)
+Arc candidates: every 25 km along the shallow (trench) edge of the EFSM20 subduction-interface
+meshes (Hellenic GRSS001, Calabrian ITSS001, Cyprus CYSS001), with strike from the edge and dip
+from the shallow part of the mesh. Aegean candidates: a coarse crustal grid (about 50 km) kept away
+from the Samos 2020 and Amorgos 1956 epicentres.
 
-Magnitude scaling:
-    Strasser, Arango & Bommer (2010), Seismological Research Letters 81(6), 941-950,
-    doi:10.1785/gssrl.81.6.941 (Table 1, subduction interface OLS regressions):
-        log10(L_km) = -2.477 + 0.585 * Mw
-        log10(W_km) = -0.882 + 0.351 * Mw
-    Seismic moment (Hanks & Kanamori 1979):
-        log10(M0_Nm) = 1.5 * Mw + 9.05
-        slip_m = M0_Nm / (rigidity_pa * L_m * W_m)
+Source shape: Gaussian uplift elongated along strike, plus a smaller Gaussian subsidence lobe
+down-dip (landward), so horizontal currents see a realistic dipole. Rupture length and width from a
+magnitude scaling relation (interface: Strasser et al. 2010; crustal: Wells & Coppersmith 1994),
+slip from M0 = mu L W D, peak uplift = fraction x slip, subsidence = ratio x uplift (PLACEHOLDERs).
+
+Angles in the tables are degrees (strike_deg, dip_deg) and converted with units.deg2rad.
+Strike follows Aki-Richards: dip direction = strike + 90 deg.
 """
-from collections import defaultdict
-from functools import lru_cache
 import json
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
-import xarray as xr
 
 from .config import magnitudes, repo_path
-from .geometry import haversine_m, heading_normal, heading_unit
 from .units import deg2rad, km_to_m, rad2deg
 
-# Strasser et al. (2010, SRL 81(6):941-950, doi:10.1785/gssrl.81.6.941) subduction interface
-STRASSER_L_A = -2.477
-STRASSER_L_B = 0.585
-STRASSER_W_A = -0.882
-STRASSER_W_B = 0.351
-# Hanks & Kanamori (1979) moment-magnitude relation in SI (N m): log10(M0) = 1.5 * Mw + 9.05
-HK_M0_A = 9.05
-HK_M0_B = 1.5
-
-# EFSM20 subduction-interface identifiers -> region names (Basili et al. 2024, doi:10.13127/efsm20/meshes)
-ARC_IDFS = (
-    ("hellenic", "GRSS001"),
-    ("calabrian", "ITSS001"),
-    ("cyprus", "CYSS001"),
-)
-
-# Default Aegean crustal box & regional fault orientation (overridable in config.yaml)
-AEGEAN_DEFAULT_LON = (23.5, 27.2)
-AEGEAN_DEFAULT_LAT = (36.0, 40.2)
-AEGEAN_DEFAULT_STRIKE_DEG = 270.0   # E-W extensional trend in the Aegean back-arc
-AEGEAN_DEFAULT_DIP_DEG = 45.0       # typical crustal normal-fault dip
-AEGEAN_MIN_DEPTH_M = 50.0           # offshore sea cells only
-
-# Fallback historic epicentres (used only if data/raw/historic/*_sources.json is absent)
-# Samos 2020: USGS us7000c7y0 (26.784 E, 37.897 N); Amorgos 1956: Okal et al. 2009 (25.76 E, 36.72 N)
-HISTORIC_EXCLUSION_FALLBACK = (
-    (26.784, 37.897),
-    (25.760, 36.720),
-)
-
-CANDIDATE_COLUMNS = [
-    "cand_id",
-    "pos_id",
-    "region",
-    "lon_deg",
-    "lat_deg",
-    "strike_deg",
-    "dip_deg",
-    "mw",
-    "length_m",
-    "width_m",
-    "slip_m",
-    "polarity",
-    "flip_allowed",
-]
+REGIONS = ("hellenic", "calabrian", "cyprus", "aegean")
 
 
-def _get(row, key):
-    if isinstance(row, dict):
-        return row[key]
-    return row[key] if hasattr(row, "__getitem__") else getattr(row, key)
+# ------------------------------------------------------------------ local geometry
+
+def _enu(lon, lat, lon0, lat0, R):
+    """East and north offsets (m) of (lon, lat) from (lon0, lat0), local equirectangular."""
+    east = R * np.cos(deg2rad(lat0)) * deg2rad(np.asarray(lon) - lon0)
+    north = R * deg2rad(np.asarray(lat) - lat0)
+    return east, north
 
 
-def _in_area_of_interest(lon_deg, lat_deg, cfg):
-    dom = cfg["domain"]
-    if "area_of_interest" in dom:
-        aoi = dom["area_of_interest"]
-        lon0, lon1 = float(aoi["lon_deg"][0]), float(aoi["lon_deg"][1])
-        lat0, lat1 = float(aoi["lat_deg"][0]), float(aoi["lat_deg"][1])
-    else:
-        lon0, lon1 = float(dom["lon_min_deg"]), float(dom["lon_max_deg"])
-        lat0, lat1 = float(dom["lat_min_deg"]), float(dom["lat_max_deg"])
-    return (lon_deg >= lon0) & (lon_deg <= lon1) & (lat_deg >= lat0) & (lat_deg <= lat1)
+def _move(lon0, lat0, east, north, R):
+    """Point displaced by (east, north) metres from (lon0, lat0)."""
+    return lon0 + rad2deg(east / (R * np.cos(deg2rad(lat0)))), lat0 + rad2deg(north / R)
 
 
-def seismic_moment_nm(mw):
-    """Hanks & Kanamori (1979) scalar seismic moment M0 in N m."""
-    return float(10.0 ** (HK_M0_B * float(mw) + HK_M0_A))
+def _bearing_vec(bearing_deg):
+    b = deg2rad(bearing_deg)
+    return np.sin(b), np.cos(b)
 
 
-def scaling_dimensions(mw, cfg):
-    """Compute (length_m, width_m, slip_m) from Strasser et al. (2010) interface scaling."""
-    sc = cfg["sources"]
-    l_a = float(sc.get("strasser_interface_L_a", STRASSER_L_A))
-    l_b = float(sc.get("strasser_interface_L_b", STRASSER_L_B))
-    w_a = float(sc.get("strasser_interface_W_a", STRASSER_W_A))
-    w_b = float(sc.get("strasser_interface_W_b", STRASSER_W_B))
-    mu = float(sc["rigidity_pa"])
+# ------------------------------------------------------------------ scaling
 
-    mw_f = float(mw)
-    length_m = float(km_to_m(10.0 ** (l_a + l_b * mw_f)))
-    width_m = float(km_to_m(10.0 ** (w_a + w_b * mw_f)))
-    m0 = seismic_moment_nm(mw_f)
-    slip_m = float(m0 / (mu * length_m * width_m))
-    return length_m, width_m, slip_m
+def rupture_size(mw, region, cfg):
+    """(length_m, width_m, slip_m) from the scaling relation for the region."""
+    s = cfg["sources"]
+    sc = s["crustal_scaling"] if region == "aegean" else s["interface_scaling"]
+    L = km_to_m(10 ** (sc["length_a"] + sc["length_b"] * mw))
+    W = km_to_m(10 ** (sc["width_a"] + sc["width_b"] * mw))
+    if region == "aegean":
+        W = min(W, s["crustal_max_width_m"])
+    m0 = 10 ** (s["moment_b"] * mw + s["moment_a"])
+    slip = m0 / (s["rigidity_pa"] * L * W)
+    return float(L), float(W), float(slip)
 
 
-@lru_cache(maxsize=2)
-def _load_efsm20_geojson(path_str):
-    with open(path_str) as f:
-        return json.load(f)
+# ------------------------------------------------------------------ EFSM20 arcs
+
+@lru_cache(maxsize=1)
+def _load_meshes(path):
+    feats = json.load(open(path))["features"]
+    by = {}
+    for f in feats:
+        p = f["properties"]
+        by.setdefault(p["idfs"], []).append(p)
+    return by
 
 
-def extract_trench_chain(tris, radius_m):
-    """Extract the ordered shallow (trench) boundary polyline of an EFSM20 subduction mesh.
-
-    EFSM20 depths are negative metres down; converted to positive metres down on read.
-    Returns (lons, lats, s_m, min_depth_m).
-    """
-    edge_tris = defaultdict(list)
+def arc_mesh(idfs, cfg):
+    """Vertices (n, 3) [lon, lat, depth_m positive down] and triangle table for one EFSM20 source."""
+    tris = _load_meshes(str(repo_path(cfg["sources"]["arc_geometry"])))[idfs]
     verts = {}
     for p in tris:
-        vs = []
         for k in (1, 2, 3):
-            vid = p[f"idvertex{k}"]
-            verts[vid] = (float(p[f"lon{k}"]), float(p[f"lat{k}"]), -float(p[f"depth{k}"]))
-            vs.append(vid)
-        for a, b in ((vs[0], vs[1]), (vs[1], vs[2]), (vs[2], vs[0])):
-            e = (a, b) if a < b else (b, a)
-            edge_tris[e].append(p)
-
-    b_edges = [e for e, ts in edge_tris.items() if len(ts) == 1]
-    adj = defaultdict(list)
-    for a, b in b_edges:
-        adj[a].append(b)
-        adj[b].append(a)
-
-    min_d = min(verts[v][2] for v in adj)
-    shallow_vs = {v for v in adj if abs(verts[v][2] - min_d) < 1.0}
-    ends = sorted(v for v in shallow_vs if sum(1 for n in adj[v] if n in shallow_vs) == 1)
-    if len(ends) != 2:
-        raise RuntimeError(f"Expected 2 shallow-edge endpoints, got {len(ends)}")
-
-    chain = [ends[0]]
-    prev, cur = None, ends[0]
-    while True:
-        nxts = [n for n in adj[cur] if n in shallow_vs and n != prev]
-        if not nxts:
-            break
-        prev, cur = cur, nxts[0]
-        chain.append(cur)
-
-    lons = np.array([verts[v][0] for v in chain], dtype=np.float64)
-    lats = np.array([verts[v][1] for v in chain], dtype=np.float64)
-    ds = haversine_m(lons[:-1], lats[:-1], lons[1:], lats[1:], radius_m)
-    s_m = np.concatenate([[0.0], np.cumsum(ds)])
-    return lons, lats, s_m, float(min_d)
+            verts[p[f"idvertex{k}"]] = (p[f"lon{k}"], p[f"lat{k}"], -p[f"depth{k}"])   # depths to positive down
+    v = np.array(list(verts.values()), dtype=float)
+    t = pd.DataFrame([{"lon_c": p["lon_c"], "lat_c": p["lat_c"], "depth_c_m": -p["depth_c"],
+                       "strike": p["strike"], "dip": p["dip"]} for p in tris])
+    return v, t
 
 
-def _sample_arc_positions(cfg):
-    """Sample candidate positions every `sources.arc_spacing_m` along the three EFSM20 arcs."""
-    radius_m = float(cfg["physics"]["earth_radius_m"])
-    spacing_m = float(cfg["sources"]["arc_spacing_m"])
-    mesh_path = repo_path(cfg["sources"]["arc_geometry"])
-    gj = _load_efsm20_geojson(str(mesh_path))
+def trench_edge(idfs, cfg):
+    """Shallowest-vertex polyline of the mesh, ordered along the arc: (n, 2) lon, lat."""
+    R = cfg["physics"]["earth_radius_m"]
+    v, _ = arc_mesh(idfs, cfg)
+    top = v[v[:, 2] <= v[:, 2].min() + 1.0][:, :2]
+    lon0, lat0 = top.mean(axis=0)
+    e, n = _enu(top[:, 0], top[:, 1], lon0, lat0, R)
+    xy = np.stack([e, n], 1)
+    d = np.hypot(*(xy[:, None] - xy[None]).transpose(2, 0, 1))
+    start = int(np.unravel_index(d.argmax(), d.shape)[0])        # one end of the arc
+    order, used = [start], {start}
+    for _ in range(len(top) - 1):                                 # greedy nearest-neighbour chain
+        dd = d[order[-1]].copy()
+        dd[list(used)] = np.inf
+        nxt = int(dd.argmin())
+        order.append(nxt)
+        used.add(nxt)
+    return top[order]
 
+
+def arc_positions(region, cfg):
+    """Trench points every arc_spacing_m along the edge, with strike (deg) and local dip (deg)."""
+    s = cfg["sources"]
+    R = cfg["physics"]["earth_radius_m"]
+    idfs = s["arcs"][region]
+    edge = trench_edge(idfs, cfg)
+    lon0, lat0 = edge.mean(axis=0)
+    e, n = _enu(edge[:, 0], edge[:, 1], lon0, lat0, R)
+    k = 3                                                         # light smoothing of the vertex chain
+    pad = lambda a: np.r_[np.full(k, a[0]), a, np.full(k, a[-1])]
+    es = np.convolve(pad(e), np.ones(2 * k + 1) / (2 * k + 1), "valid")
+    ns = np.convolve(pad(n), np.ones(2 * k + 1) / (2 * k + 1), "valid")
+    seg = np.hypot(np.diff(es), np.diff(ns))
+    cum = np.r_[0.0, np.cumsum(seg)]
+    spacing = s["arc_spacing_m"]
+    targets = np.arange(spacing / 2, cum[-1], spacing)
+    pe, pn = np.interp(targets, cum, es), np.interp(targets, cum, ns)
+    te, tn = np.gradient(pe), np.gradient(pn)
+    _, tris = arc_mesh(idfs, cfg)
+    ce, cn = _enu(tris.lon_c.to_numpy(), tris.lat_c.to_numpy(), lon0, lat0, R)
+    shallow = tris.depth_c_m.to_numpy() <= s["arc_max_depth_for_dip_m"]
+    tri_strike = deg2rad(tris.strike.to_numpy())
     rows = []
-    for region, idfs in ARC_IDFS:
-        tris = [ft["properties"] for ft in gj["features"] if ft["properties"]["idfs"] == idfs]
-        lons, lats, s_m, min_d = extract_trench_chain(tris, radius_m)
+    for x, y, tx, ty in zip(pe, pn, te, tn):
+        strike = np.rad2deg(np.arctan2(tx, ty)) % 360.0
+        near = shallow & (np.hypot(ce - x, cn - y) < s["arc_local_radius_m"])
+        if near.any():
+            # orient the edge tangent like EFSM20's own Aki-Richards strikes (dip to the right = landward)
+            ref = np.arctan2(np.sin(tri_strike[near]).mean(), np.cos(tri_strike[near]).mean())
+            if np.cos(deg2rad(strike) - ref) < 0:
+                strike = (strike + 180.0) % 360.0
+        local = shallow & (np.hypot(ce - x, cn - y) < s["arc_local_radius_m"])
+        dip = float(tris.dip.to_numpy()[local].mean()) if local.any() else float(tris.dip.median())
+        lon, lat = _move(lon0, lat0, x, y, R)
+        rows.append(dict(trench_lon_deg=lon, trench_lat_deg=lat, strike_deg=strike, dip_deg=dip))
+    return pd.DataFrame(rows)
 
-        tri_lon = np.array([float(p["lon_c"]) for p in tris], dtype=np.float64)
-        tri_lat = np.array([float(p["lat_c"]) for p in tris], dtype=np.float64)
-        tri_dep = np.array([-float(p["depth_c"]) for p in tris], dtype=np.float64)
-        tri_str = np.array([float(p["strike"]) for p in tris], dtype=np.float64)
-        tri_dip = np.array([float(p["dip"]) for p in tris], dtype=np.float64)
-        deep_mask = tri_dep > (min_d + 5000.0)
 
-        # Centred spacing along arc so consecutive points are exactly `spacing_m` apart
-        n_pts = max(1, int(np.floor(s_m[-1] / spacing_m)) + 1)
-        rem = s_m[-1] - (n_pts - 1) * spacing_m
-        s_pts = 0.5 * rem + np.arange(n_pts, dtype=np.float64) * spacing_m
+# ------------------------------------------------------------------ Aegean grid
 
-        # Orient chain consistently west-to-east (increasing longitude) for neat ordering
-        if lons[-1] < lons[0]:
-            lons = lons[::-1]
-            lats = lats[::-1]
-            s_m = s_m[-1] - s_m[::-1]
-
-        for sp in s_pts:
-            lo = float(np.interp(sp, s_m, lons))
-            la = float(np.interp(sp, s_m, lats))
-            if not _in_area_of_interest(lo, la, cfg):
+def aegean_positions(cfg, grid):
+    s = cfg["sources"]
+    R = cfg["physics"]["earth_radius_m"]
+    box = s["aegean_box"]
+    lon0, lat0 = box["lon_deg"][0], box["lat_deg"][0]
+    ew, nw = _enu(box["lon_deg"][1], box["lat_deg"][1], lon0, lat0, R)
+    sp = s["aegean_spacing_m"]
+    rows = []
+    for north in np.arange(sp / 2, nw, sp):
+        for east in np.arange(sp / 2, ew, sp):
+            lon, lat = _move(lon0, lat0, east, north, R)
+            i = int(np.argmin(np.abs(grid.lon - lon)))
+            j = int(np.argmin(np.abs(grid.lat - lat)))
+            if not grid.wet[j, i] or grid.depth[j, i] < s["aegean_min_depth_m"]:
                 continue
-
-            # Take strike and dip from nearby non-flat mesh triangles (within 1.2 * spacing)
-            d_tri = haversine_m(lo, la, tri_lon, tri_lat, radius_m)
-            near = (d_tri <= 1.2 * spacing_m) & (tri_dip > 0.5)
-            if not near.any():
-                idx = np.argsort(d_tri)[:10]
-                near = np.zeros(len(tris), dtype=bool)
-                near[idx] = True
-
-            # Circular mean of mesh triangle strikes; verify Aki-Richards down-dip (strike+90) points deeper
-            str_rad = deg2rad(tri_str[near])
-            strike_deg = float(rad2deg(np.arctan2(np.mean(np.sin(str_rad)), np.mean(np.cos(str_rad)))) % 360.0)
-            dip_deg = float(np.median(tri_dip[near]))
-
-            # Guard against any 180-deg flip by checking strike+90 against deeper mesh direction
-            d_deep = haversine_m(lo, la, tri_lon[deep_mask], tri_lat[deep_mask], radius_m)
-            k_deep = np.argsort(d_deep)[:20]
-            vx = float(np.mean((tri_lon[deep_mask][k_deep] - lo) * np.cos(deg2rad(la))))
-            vy = float(np.mean(tri_lat[deep_mask][k_deep] - la))
-            nx, ny = heading_normal(deg2rad(strike_deg))
-            if vx * nx + vy * ny < 0.0:
-                strike_deg = (strike_deg + 180.0) % 360.0
-
-            rows.append(
-                {
-                    "region": region,
-                    "lon_deg": lo,
-                    "lat_deg": la,
-                    "strike_deg": strike_deg,
-                    "dip_deg": dip_deg,
-                    "flip_allowed": False,
-                }
-            )
-    return rows
+            far = all(np.hypot(*_enu(lon, lat, ep["lon_deg"], ep["lat_deg"], R)) >= s["aegean_exclusion_radius_m"]
+                      for ep in s["exclusion_epicentres"].values())
+            if far:
+                rows.append(dict(trench_lon_deg=lon, trench_lat_deg=lat,
+                                 strike_deg=s["aegean_strike_deg"], dip_deg=s["aegean_dip_deg"]))
+    return pd.DataFrame(rows)
 
 
-def _historic_exclusion_points(cfg):
-    """Read Samos 2020 and Amorgos 1956 epicentres from data/raw/historic/ (with verified fallback)."""
-    hdir = repo_path(cfg["paths"]["historic_dir"])
-    pts = []
-    for fn in ("samos_2020_sources.json", "amorgos_1956_sources.json"):
-        p = hdir / fn
-        if p.exists():
-            rec = json.loads(p.read_text()).get("recommended_for_replay", {})
-            if "lon_deg" in rec and "lat_deg" in rec:
-                pts.append((float(rec["lon_deg"]), float(rec["lat_deg"])))
-    if len(pts) == 2:
-        return tuple(pts)
-    return HISTORIC_EXCLUSION_FALLBACK
+# ------------------------------------------------------------------ table
 
-
-def _sample_aegean_positions(cfg):
-    """Build a coarse Aegean crustal grid (~50 km) on wet sea cells away from Samos and Amorgos."""
-    radius_m = float(cfg["physics"]["earth_radius_m"])
-    sc = cfg["sources"]
-    spacing_m = float(sc["aegean_spacing_m"])
-    excl_m = float(sc["aegean_exclusion_radius_m"])
-    lon0, lon1 = sc.get("aegean_lon_deg", AEGEAN_DEFAULT_LON)
-    lat0, lat1 = sc.get("aegean_lat_deg", AEGEAN_DEFAULT_LAT)
-    strike_deg = float(sc.get("aegean_strike_deg", AEGEAN_DEFAULT_STRIKE_DEG))
-    dip_deg = float(sc.get("aegean_dip_deg", AEGEAN_DEFAULT_DIP_DEG))
-    min_depth_m = float(cfg["traffic"].get("min_ship_depth_m", AEGEAN_MIN_DEPTH_M))
-
-    ref_lat = 0.5 * (float(lat0) + float(lat1))
-    dlat_deg = float(rad2deg(spacing_m / radius_m))
-    dlon_deg = float(rad2deg(spacing_m / (radius_m * np.cos(deg2rad(ref_lat)))))
-    lats = np.arange(float(lat0), float(lat1) + 1e-9, dlat_deg)
-    lons = np.arange(float(lon0), float(lon1) + 1e-9, dlon_deg)
-
-    excl_pts = _historic_exclusion_points(cfg)
-    gebco_path = repo_path(cfg["paths"]["gebco"])
-    rows = []
-    with xr.open_dataset(gebco_path) as ds:
-        elev = ds["elevation"]
-        for la in lats:
-            for lo in lons:
-                if not _in_area_of_interest(lo, la, cfg):
-                    continue
-                # Exclude Sea of Marmara (NE corner outside the Aegean)
-                if lo > 26.5 and la > 40.0:
-                    continue
-                # Exclude nodes within exclusion radius of Samos 2020 and Amorgos 1956 epicentres
-                if any(haversine_m(lo, la, ex_lo, ex_la, radius_m) < excl_m for ex_lo, ex_la in excl_pts):
-                    continue
-                z = float(elev.sel(lat=la, lon=lo, method="nearest").values)
-                if z <= -min_depth_m:
-                    rows.append(
-                        {
-                            "region": "aegean",
-                            "lon_deg": float(lo),
-                            "lat_deg": float(la),
-                            "strike_deg": strike_deg,
-                            "dip_deg": dip_deg,
-                            "flip_allowed": True,
-                        }
-                    )
-    return rows
-
-
-def candidate_table(cfg, *, save=False):
-    """Return the full candidate source table (arcs + Aegean crustal grid).
-
-    Row order IS the library order (`cand_id = 0..C-1`).
-    If `save=True`, writes `data/processed/candidates.csv`.
-    """
-    mws_arc = magnitudes(cfg)
-    aegean_mw_max = float(cfg["sources"]["aegean_mw_max"])
-    mws_aegean = mws_arc[mws_arc <= aegean_mw_max + 1e-9]
-
-    positions = _sample_arc_positions(cfg) + _sample_aegean_positions(cfg)
-    records = []
-    cand_id = 0
-    for pos_id, pos in enumerate(positions):
-        mws = mws_aegean if pos["region"] == "aegean" else mws_arc
-        for mw in mws:
-            length_m, width_m, slip_m = scaling_dimensions(float(mw), cfg)
-            records.append(
-                {
-                    "cand_id": cand_id,
-                    "pos_id": pos_id,
-                    "region": pos["region"],
-                    "lon_deg": round(float(pos["lon_deg"]), 5),
-                    "lat_deg": round(float(pos["lat_deg"]), 5),
-                    "strike_deg": round(float(pos["strike_deg"]), 2),
-                    "dip_deg": round(float(pos["dip_deg"]), 2),
-                    "mw": float(mw),
-                    "length_m": round(length_m, 1),
-                    "width_m": round(width_m, 1),
-                    "slip_m": round(slip_m, 4),
-                    "polarity": 1,
-                    "flip_allowed": bool(pos["flip_allowed"]),
-                }
-            )
-            cand_id += 1
-
-    df = pd.DataFrame(records, columns=CANDIDATE_COLUMNS)
-    if save:
-        out_path = repo_path(cfg["paths"]["candidates"])
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(out_path, index=False)
-    return df
-
-
-def source_eta0(grid, row, cfg, kind=None, polarity=None):
-    """Build initial sea-surface displacement `eta0` (ny, nx) float32 on `grid`.
-
-    Gaussian uplift centred at `(lon_deg, lat_deg)` elongated along `strike_deg`
-    with `sigma_s = length_m / 2`, `sigma_d = width_m / 2`. For `kind == "dipole"`,
-    adds a landward (down-dip = `strike_deg + 90 deg`) Gaussian subsidence lobe
-    offset by `landward_offset_widths * width_m` with amplitude `subsidence_ratio`
-    times the uplift peak. Multiplied by `polarity` (`+1` uplift-first / thrust,
-    `-1` subsidence-first / normal). Land cells are masked to 0.
-    """
-    sc = cfg["sources"]
-    radius_m = float(cfg["physics"]["earth_radius_m"])
-    kind_use = (kind or sc["kind"]).lower()
-    if kind_use not in ("dipole", "monopole"):
-        raise ValueError(f"Unknown source kind: {kind_use!r}; expected 'dipole' or 'monopole'")
-
-    pol = int(polarity) if polarity is not None else int(_get(row, "polarity"))
-    if pol not in (-1, 1):
-        raise ValueError(f"polarity must be +1 or -1, got {pol}")
-
-    lon0 = float(_get(row, "lon_deg"))
-    lat0 = float(_get(row, "lat_deg"))
-    strike_rad = float(deg2rad(float(_get(row, "strike_deg"))))
-    length_m = float(_get(row, "length_m"))
-    width_m = float(_get(row, "width_m"))
-    slip_m = float(_get(row, "slip_m"))
-
-    peak_up = float(sc["uplift_fraction_of_slip"]) * slip_m
-    sub_ratio = float(sc["subsidence_ratio"])
-    offset_d = float(sc["landward_offset_widths"]) * width_m
-
-    # Local tangent-plane coordinates (east, north) in metres relative to (lon0, lat0)
-    cos_lat0 = float(np.cos(deg2rad(lat0)))
-    dx_m = radius_m * cos_lat0 * deg2rad(grid.lon[None, :] - lon0)
-    dy_m = radius_m * deg2rad(grid.lat[:, None] - lat0)
-
-    # Strike unit vector and Aki-Richards down-dip (landward = strike + 90 deg) normal
-    sx, sy = heading_unit(strike_rad)
-    nx, ny = heading_normal(strike_rad)
-    s_coord = dx_m * sx + dy_m * sy
-    d_coord = dx_m * nx + dy_m * ny
-
-    sigma_s = 0.5 * length_m
-    sigma_d = 0.5 * width_m
-
-    up = peak_up * np.exp(-0.5 * ((s_coord / sigma_s) ** 2 + (d_coord / sigma_d) ** 2))
-    if kind_use == "dipole":
-        sub = (sub_ratio * peak_up) * np.exp(
-            -0.5 * ((s_coord / sigma_s) ** 2 + ((d_coord - offset_d) / sigma_d) ** 2)
-        )
-        eta = pol * (up - sub)
+def _source_row(region, pos_id, trench_lon, trench_lat, strike, dip, mw, cfg):
+    """One source: rupture size from Mw; uplift centre down-dip of the trench point (arcs only)."""
+    R = cfg["physics"]["earth_radius_m"]
+    L, W, slip = rupture_size(mw, region, cfg)
+    if region == "aegean":
+        lon, lat = trench_lon, trench_lat
     else:
-        eta = pol * up
+        off = cfg["sources"]["uplift_centre_downdip_frac"] * W * np.cos(deg2rad(dip))
+        dx, dy = _bearing_vec(strike + 90.0)
+        lon, lat = _move(trench_lon, trench_lat, off * dx, off * dy, R)
+    return dict(region=region, pos_id=pos_id, lon_deg=float(lon), lat_deg=float(lat),
+                trench_lon_deg=float(trench_lon), trench_lat_deg=float(trench_lat),
+                strike_deg=float(strike), dip_deg=float(dip), mw=float(mw),
+                length_m=L, width_m=W, slip_m=slip, polarity=1, flip_allowed=region == "aegean")
 
-    eta = np.where(grid.wet, eta, 0.0)
-    return eta.astype(np.float32)
+
+def _in_aoi(lon, lat, cfg):
+    a = cfg["domain"]["area_of_interest"]
+    return a["lon_deg"][0] <= lon <= a["lon_deg"][1] and a["lat_deg"][0] <= lat <= a["lat_deg"][1]
+
+
+def candidate_table(cfg, grid=None, save=True):
+    """Library candidates in library order (cand_id = row). Saved to paths.candidates."""
+    if grid is None:
+        from .grid import load_grid
+        grid = load_grid(cfg)
+    mags = magnitudes(cfg)
+    rows, pos_id = [], 0
+    for region in ("hellenic", "calabrian", "cyprus", "aegean"):
+        pos = aegean_positions(cfg, grid) if region == "aegean" else arc_positions(region, cfg)
+        region_mags = mags[mags <= cfg["sources"]["aegean_mw_max"] + 1e-9] if region == "aegean" else mags
+        for p in pos.itertuples():
+            if not _in_aoi(p.trench_lon_deg, p.trench_lat_deg, cfg):
+                continue
+            for mw in region_mags:
+                rows.append(_source_row(region, pos_id, p.trench_lon_deg, p.trench_lat_deg,
+                                        p.strike_deg, p.dip_deg, mw, cfg))
+            pos_id += 1
+    table = pd.DataFrame(rows)
+    table.insert(0, "cand_id", np.arange(len(table)))
+    if save:
+        out = repo_path(cfg["paths"]["candidates"])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        table.to_csv(out, index=False)
+    return table
 
 
 def perturb(row, along_strike_m, dmw, cfg):
-    """Return a new source dict shifted `along_strike_m` along strike with `mw + dmw` rescaled."""
-    radius_m = float(cfg["physics"]["earth_radius_m"])
-    lon0 = float(_get(row, "lon_deg"))
-    lat0 = float(_get(row, "lat_deg"))
-    strike_deg = float(_get(row, "strike_deg"))
-    dip_deg = float(_get(row, "dip_deg"))
-    new_mw = round(float(_get(row, "mw")) + float(dmw), 4)
-
-    sx, sy = heading_unit(float(deg2rad(strike_deg)))
-    dlat_deg = float(rad2deg((float(along_strike_m) * sy) / radius_m))
-    dlon_deg = float(rad2deg((float(along_strike_m) * sx) / (radius_m * np.cos(deg2rad(lat0)))))
-
-    length_m, width_m, slip_m = scaling_dimensions(new_mw, cfg)
-    out = dict(row) if isinstance(row, dict) else row.to_dict()
-    out.update(
-        {
-            "lon_deg": round(lon0 + dlon_deg, 5),
-            "lat_deg": round(lat0 + dlat_deg, 5),
-            "strike_deg": strike_deg,
-            "dip_deg": dip_deg,
-            "mw": new_mw,
-            "length_m": round(length_m, 1),
-            "width_m": round(width_m, 1),
-            "slip_m": round(slip_m, 4),
-        }
-    )
+    """A new source moved along strike (trench point and centre) with magnitude mw + dmw."""
+    R = cfg["physics"]["earth_radius_m"]
+    dx, dy = _bearing_vec(row["strike_deg"])
+    lon, lat = _move(row["trench_lon_deg"], row["trench_lat_deg"], along_strike_m * dx, along_strike_m * dy, R)
+    out = _source_row(row["region"], row["pos_id"], lon, lat, row["strike_deg"], row["dip_deg"],
+                      row["mw"] + dmw, cfg)
+    out["polarity"] = int(row.get("polarity", 1))
     return out
 
 
-def custom_source(
-    lon_deg,
-    lat_deg,
-    strike_deg,
-    dip_deg,
-    mw,
-    fault,
-    cfg,
-    length_m=None,
-    width_m=None,
-    slip_m=None,
-):
-    """Build a custom earthquake source dict from published parameters (used for T26).
+def custom_source(lon_deg, lat_deg, strike_deg, dip_deg, mw, fault, cfg, length_m=None, width_m=None,
+                  slip_m=None, region="aegean", name=""):
+    """Source from published parameters (T26). fault: 'thrust' (polarity +1) or 'normal' (-1, subsidence-first).
 
-    `fault`: 'thrust' (polarity +1, uplift-first) or 'normal' (polarity -1, subsidence-first).
-    Any omitted dimensions default to Strasser et al. (2010) scaling; if custom length_m or
-    width_m is supplied without slip_m, slip_m is computed from M0 = mu * L * W * D.
+    (lon_deg, lat_deg) is the rupture centre. Missing dimensions come from the scaling relation for
+    `region` ('aegean' = crustal); slip is then set from M0 = mu L W D unless given.
     """
-    fault_norm = str(fault).strip().lower()
-    if fault_norm == "thrust":
-        polarity = 1
-    elif fault_norm == "normal":
-        polarity = -1
-    else:
-        raise ValueError(f"fault must be 'thrust' or 'normal', got {fault!r}")
+    if fault not in ("thrust", "normal"):
+        raise ValueError(fault)
+    L, W, slip = rupture_size(mw, region, cfg)
+    L = length_m or L
+    W = width_m or W
+    if slip_m is None:
+        slip_m = 10 ** (cfg["sources"]["moment_b"] * mw + cfg["sources"]["moment_a"]) / (cfg["sources"]["rigidity_pa"] * L * W)
+    return dict(region=region, pos_id=-1, lon_deg=float(lon_deg), lat_deg=float(lat_deg),
+                trench_lon_deg=float(lon_deg), trench_lat_deg=float(lat_deg), strike_deg=float(strike_deg),
+                dip_deg=float(dip_deg), mw=float(mw), length_m=float(L), width_m=float(W), slip_m=float(slip_m),
+                polarity=1 if fault == "thrust" else -1, flip_allowed=False, name=name)
 
-    def_l, def_w, _ = scaling_dimensions(float(mw), cfg)
-    l_use = float(length_m) if length_m is not None else def_l
-    w_use = float(width_m) if width_m is not None else def_w
-    if slip_m is not None:
-        s_use = float(slip_m)
-    else:
-        mu = float(cfg["sources"]["rigidity_pa"])
-        s_use = float(seismic_moment_nm(float(mw)) / (mu * l_use * w_use))
 
-    return {
-        "cand_id": -1,
-        "pos_id": -1,
-        "region": "custom",
-        "lon_deg": float(lon_deg),
-        "lat_deg": float(lat_deg),
-        "strike_deg": float(strike_deg) % 360.0,
-        "dip_deg": float(dip_deg),
-        "mw": float(mw),
-        "length_m": round(l_use, 1),
-        "width_m": round(w_use, 1),
-        "slip_m": round(s_use, 4),
-        "polarity": polarity,
-        "flip_allowed": False,
-        "fault": fault_norm,
-    }
+# ------------------------------------------------------------------ initial surface
+
+def source_eta0(grid, row, cfg, kind=None, polarity=None):
+    """Initial sea-surface displacement (ny, nx) float32, m (= seafloor uplift, instantaneous)."""
+    s = cfg["sources"]
+    R = cfg["physics"]["earth_radius_m"]
+    kind = kind or s["kind"]
+    polarity = row.get("polarity", 1) if polarity is None else polarity
+    lon0, lat0 = float(row["lon_deg"]), float(row["lat_deg"])
+    e, n = _enu(grid.lon[None, :], grid.lat[:, None], lon0, lat0, R)
+    sx, sy = _bearing_vec(row["strike_deg"])
+    along = e * sx + n * sy
+    across = e * sy - n * sx                                       # positive down-dip (strike + 90 deg)
+    w_h = row["width_m"] * np.cos(deg2rad(row["dip_deg"]))
+    floor = s["min_sigma_m"]
+    sig_a = max(s["gaussian_sigma_frac"] * row["length_m"], floor)
+    sig_c = max(s["gaussian_sigma_frac"] * w_h, floor)
+    up = s["uplift_fraction_of_slip"] * row["slip_m"]
+    eta = up * np.exp(-0.5 * ((along / sig_a) ** 2 + (across / sig_c) ** 2))
+    if kind == "dipole":
+        off = s["landward_offset_widths"] * max(w_h, floor)
+        eta -= s["subsidence_ratio"] * up * np.exp(-0.5 * ((along / sig_a) ** 2 + ((across - off) / sig_c) ** 2))
+    elif kind != "monopole":
+        raise ValueError(kind)
+    return (polarity * eta).astype(np.float32)
 
 
 def dipole_volume(eta0, grid):
-    """Integrate positive, negative, and net displaced water volumes (m^3) over wet cells.
-
-    Returns `(uplift_m3, subsidence_m3, net_m3)` where `uplift_m3 >= 0` is the positive
-    volume, `subsidence_m3 >= 0` is the magnitude of the negative volume, and
-    `net_m3 = uplift_m3 - subsidence_m3` is the signed net volume integral.
-    """
-    eta = np.asarray(eta0, dtype=np.float64)
-    cell_area = (grid.dx[:, None].astype(np.float64)) * float(grid.dy)
-    wet = np.asarray(grid.wet, dtype=bool)
-    dv = np.where(wet, eta * cell_area, 0.0)
-    uplift_m3 = float(np.sum(np.where(dv > 0.0, dv, 0.0)))
-    subsidence_m3 = float(np.sum(np.where(dv < 0.0, -dv, 0.0)))
-    net_m3 = float(uplift_m3 - subsidence_m3)
-    return uplift_m3, subsidence_m3, net_m3
+    """(uplift_m3, subsidence_m3, net_m3) over wet cells (cell area = dx * dy)."""
+    area = grid.dx[:, None] * grid.dy
+    e = np.where(grid.wet, eta0.astype(np.float64), 0.0)
+    up = float((np.clip(e, 0, None) * area).sum())
+    down = float((np.clip(e, None, 0) * area).sum())
+    return up, down, up + down
