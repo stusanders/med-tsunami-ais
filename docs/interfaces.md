@@ -237,7 +237,10 @@ baseline_detector.single_ship_stat(d (E,S,T), sigma_i (S,), valid) -> (E,T)   # 
 baseline_detector.literal_alarm_minute(d, sigma_i, valid, k=3.0) -> (E,) int, -1 if never
 baseline_detector.calibrated_threshold(stat_quiet, far) -> k
 baseline_detector.alarm_minute(stat, k) -> (E,) int
+baseline_detector.false_alarm_rate(stat_quiet, k) -> float     # measured, used to report the literal rule's rate
 ```
+
+`sigma_i` for the single-ship rules is each ship's **total** filtered noise std, `sqrt(noise.ship_sigma**2 + noise.shared_sigma**2)`, i.e. its own noise as one ship would measure it. They run on the same `d (E, S, T)` as the network detector.
 
 ## 12. Gauges and buoys (T06, B)
 
