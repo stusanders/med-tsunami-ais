@@ -149,3 +149,14 @@ calibration:                   # T05 Piraeus analysis thresholds (not physics)
   steady_max_dheading_deg: 2.0 # PLACEHOLDER: heading change between reports for a steady ship
   max_valid_speed_kn: 50.0     # data/README.md: 22 rows exceed 50 kn, max 102 (outliers)
   heading_not_available_code: 511
+
+truth:                         # T16 truth events (never identical to library entries)
+  map2_along_strike_frac: 0.5  # truth = library source moved this fraction of the grid spacing along strike
+  map2_dmw: 0.1                # and magnitude + this (PLAN.md)
+  n_twin: 80                   # random off-grid events for the twin check (PLAN: 50 to 100)
+  twin_offset_frac_min: 0.1    # random along-strike offset, as a fraction of the grid spacing: at least this far from the grid node
+  twin_offset_frac_max: 0.45   # and at most this (so the nearest node stays the parent)
+  twin_dmw_max: 0.125          # random magnitude perturbation, uniform in +- this, kept inside the library's magnitude range
+  aegean_truth_polarity: -1    # PLACEHOLDER: Aegean truth events are normal faults (subsidence-first) so the flipped templates are exercised; -1 or +1
+  min_separation_m: 1000.0     # a truth source must be at least this far from every library source at the same magnitude, or differ in strike
+  mw_tolerance: 1.0e-6         # magnitudes closer than this count as equal
