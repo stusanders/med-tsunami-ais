@@ -44,7 +44,7 @@ tlib_dir = repo_path(cfg["paths"]["truth_dir"])
 tdf = pd.read_csv(out / "thresholds.csv")
 tsel = tdf[(tdf.operator == op) & (tdf.range_cap_m == cap) & (tdf.regime == regime)].set_index("detector")["threshold"].to_dict()
 efleets = [SW.make_fleet(pool, cfg, SW.PURPOSE_TRAFFIC, i) for i in range(S["n_traffic"])]
-gtable = gauges.load_gauges(grid, cfg)
+gtable = gauges.table_from_pool(pool, cfg)
 e0_gb = SW.run_eta0_at_gauges(truth, pd.read_csv(tlib_dir / "uplift_scale.csv"), grid, cfg, gtable, source_eta0)
 trig, _ = SW.gauge_table(truth, cfg, tlib_dir, gtable, scale=tscale, eta0_gb=e0_gb)
 gcols = SW.gauge_columns(truth, trig[:len(truth)], cfg, gtable)

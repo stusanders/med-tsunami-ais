@@ -79,14 +79,7 @@ if "events" in args.stages:
         truth = truth.iloc[:args.max_events]
     tscale = SW.load_scale(truth_dir / "uplift_scale.csv", "run_id")
     tlib = SW.ScaledLibrary(scoring.Library(truth_dir), tscale)
-    efleets = [SW.make_fleet(pool, cfg, SW.PURPOSE_TRAFFIC, i) for i in range(cfg["sweep"]["n_traffic_draws"])]
-    log("event traffic draws:", [len(f.draw100.pool_idx) for f in efleets])
-    SW.gather_pass(lib, cand["cand_id"].values, efleets, cfg, cache, "lib", per_ship=False)
-    log("library pass done")
-    SW.gather_pass(tlib, truth["run_id"].values, efleets, cfg, cache, "truth" + (f"_{args.max_events}" if args.max_events else ""), per_ship=True)
-    log("truth pass done")
-    ttag = "truth" + (f"_{args.max_events}" if args.max_events else "")
-    gtable = gauges.load_gauges(grid, cfg)
+    gtable = gauges.table_from_pool(pool, cfg)
     from tsunami.sources import source_eta0 as _eta0
     e0_gb = SW.run_eta0_at_gauges(truth, pd.read_csv(truth_dir / "uplift_scale.csv"), grid, cfg, gtable, _eta0)
     trig, first_eta = SW.gauge_table(truth, cfg, truth_dir, gtable, scale=tscale, eta0_gb=e0_gb)
@@ -98,6 +91,13 @@ if "events" in args.stages:
                        "eta_first_sample_m": first_eta.ravel()})
     gl.to_parquet(out / "gauge_triggers.parquet")
     log("gauge triggers written")
+    efleets = [SW.make_fleet(pool, cfg, SW.PURPOSE_TRAFFIC, i) for i in range(cfg["sweep"]["n_traffic_draws"])]
+    log("event traffic draws:", [len(f.draw100.pool_idx) for f in efleets])
+    SW.gather_pass(lib, cand["cand_id"].values, efleets, cfg, cache, "lib", per_ship=False)
+    log("library pass done")
+    SW.gather_pass(tlib, truth["run_id"].values, efleets, cfg, cache, "truth" + (f"_{args.max_events}" if args.max_events else ""), per_ship=True)
+    log("truth pass done")
+    ttag = "truth" + (f"_{args.max_events}" if args.max_events else "")
     caps = sorted(cfg["traffic"]["range_caps_m"])
     regimes = list(cfg["weather_regimes"])
     combos = list(itertools.product(range(len(efleets)), caps, cfg["operators"], regimes))

@@ -70,3 +70,15 @@ def test_wave_riding_on_a_static_offset_uses_the_change():
     t = G.trigger_times(gb, table(1), eta0_gb=np.array([[-0.5]], np.float32), sample_interval_s=30.0)
     assert t[0, 0] == 30 * 31 + 180.0
     assert G.eta0_at_receivers(np.arange(12.0).reshape(3, 4), __import__("pandas").DataFrame({"cell_j": [1, 2], "cell_i": [3, 0]})).tolist() == [7.0, 8.0]
+
+
+@pytest.mark.skipif(not have, reason="grid or IOC list missing")
+def test_table_from_pool_equals_load_gauges():
+    from tsunami import ships
+    g = load_grid(cfg)
+    full, pool = G.load_gauges(g, cfg), ships.load_pool(cfg)
+    t = G.table_from_pool(pool, cfg)
+    cols = ["code", "lon_deg", "lat_deg", "cell_j", "cell_i", "rtype", "threshold_m", "delay_s"]
+    assert len(t) == len(full)
+    for c in cols:
+        assert (t[c].values == full[c].values).all() or np.allclose(t[c].values.astype(float), full[c].values.astype(float)), c

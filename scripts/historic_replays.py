@@ -95,7 +95,7 @@ def stage_replay():
     efleets = [SW.make_fleet(pool, cfg, SW.PURPOSE_TRAFFIC, i) for i in range(cfg["sweep"]["n_traffic_draws"])]
     SW.gather_pass(lib, cand["cand_id"].values, efleets, cfg, cache, "lib")
     SW.gather_pass(hlib, hist["run_id"].values, efleets, cfg, cache, "hist", per_ship=True)
-    gtable = gauges.load_gauges(grid, cfg)
+    gtable = gauges.table_from_pool(pool, cfg)
     e0_gb = SW.run_eta0_at_gauges(hist, pd.read_csv(hist_dir / "uplift_scale.csv"), grid, cfg, gtable, source_eta0)
     trig, _ = SW.gauge_table(hist, cfg, hist_dir, gtable, scale=hscale, eta0_gb=e0_gb)
     gcols = SW.gauge_columns(hist, trig[:len(hist)], cfg, gtable)

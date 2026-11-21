@@ -110,3 +110,17 @@ def eta0_at_receivers(eta0, table):
     eta0 = np.asarray(eta0)
     j, i = table["cell_j"].values, table["cell_i"].values
     return eta0[..., j, i]
+
+
+def table_from_pool(pool, cfg):
+    """The gauge and buoy table rebuilt from the receiver pool alone (same rows, same order, same columns as load_gauges).
+
+    Lets a runtime without the raw IOC and buoy files run triggers: the pool already stores each receiver's snapped cell.
+    """
+    gb = np.nonzero(np.asarray(pool.rtype) > 0)[0]
+    is_buoy = np.asarray(pool.rtype)[gb] == BUOY
+    g, b = cfg["gauges"], cfg["buoys"]
+    return pd.DataFrame({"code": np.asarray(pool.code)[gb], "name": np.asarray(pool.code)[gb], "lon_deg": np.asarray(pool.lon)[gb],
+                         "lat_deg": np.asarray(pool.lat)[gb], "cell_j": np.asarray(pool.cell_j)[gb], "cell_i": np.asarray(pool.cell_i)[gb],
+                         "rtype": np.asarray(pool.rtype)[gb].astype(int), "threshold_m": np.where(is_buoy, b["threshold_m"], g["threshold_m"]),
+                         "delay_s": np.where(is_buoy, b["telemetry_delay_s"], g["telemetry_delay_s"])})
