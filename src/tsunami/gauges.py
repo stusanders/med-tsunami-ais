@@ -1,0 +1,90 @@
+"""Tide gauges and deep-sea buoys (T06). Contract: docs/interfaces.md section 12.
+
+`load_gauges` returns the gauge and buoy section of the receiver pool, in pool order (gauges first, then buoys).
+"""
+import numpy as np
+import pandas as pd
+from scipy.spatial import cKDTree
+
+from .config import load_config, repo_path
+from .grid import _unit_xyz
+
+GAUGE, BUOY = 1, 2
+
+
+def _snap(grid, lon_deg, lat_deg, radius_m):
+    """Nearest wet cell centre for each point; returns (cell_j, cell_i, distance_m)."""
+    jj, ii = np.nonzero(grid.wet)
+    tree = cKDTree(_unit_xyz(grid.lon[ii], grid.lat[jj]))
+    chord, k = tree.query(_unit_xyz(lon_deg, lat_deg))
+    return jj[k].astype(np.int32), ii[k].astype(np.int32), 2.0 * radius_m * np.arcsin(np.clip(chord / 2.0, 0, 1))
+
+
+def read_ioc(cfg):
+    """IOC stations kept for the model: normal status, a sea-level sensor, lon/lat inside the domain."""
+    df = pd.read_csv(repo_path(cfg["paths"]["ioc_gauges"]))
+    g, d = cfg["gauges"], cfg["domain"]
+    keep = (df["active"].astype(bool) & (df["ioc_status"] == g["require_ioc_status"])
+            & ~df["sensors"].isin(g["exclude_sensors"])
+            & df["lon"].between(d["lon_min_deg"], d["lon_max_deg"]) & df["lat"].between(d["lat_min_deg"], d["lat_max_deg"]))
+    return df[keep].sort_values("station_code", key=lambda s: s.str.lower()).reset_index(drop=True)
+
+
+def read_buoys(cfg):
+    """Ionian buoys from T26a (Stream C). Returns an empty frame if the file is not there yet."""
+    path = repo_path(cfg["paths"]["buoys"])
+    if not path.exists():
+        return pd.DataFrame(columns=["code", "name", "lon_deg", "lat_deg"])
+    return pd.read_csv(path)
+
+
+def load_gauges(grid, cfg=None):
+    """Table of gauges (rtype 1) then buoys (rtype 2) snapped to their nearest wet cell centre.
+
+    Columns: code, name, lon_deg, lat_deg (snapped cell centre), cell_j, cell_i, rtype, threshold_m, delay_s,
+    plus orig_lon_deg, orig_lat_deg, snap_dist_m. Stations farther than gauges.max_snap_dist_m from a wet cell are dropped
+    (Black Sea, Marmara), and so is any second station snapping to a cell already used; both are listed in `.attrs["dropped"]`.
+    """
+    cfg = cfg or load_config()
+    R, gc = cfg["physics"]["earth_radius_m"], cfg["gauges"]
+    ioc, buoys = read_ioc(cfg), read_buoys(cfg)
+    rows = pd.concat([
+        pd.DataFrame({"code": ioc["station_code"], "name": ioc["name"], "orig_lon_deg": ioc["lon"], "orig_lat_deg": ioc["lat"],
+                      "rtype": GAUGE}),
+        pd.DataFrame({"code": buoys["code"], "name": buoys["name"], "orig_lon_deg": buoys["lon_deg"],
+                      "orig_lat_deg": buoys["lat_deg"], "rtype": BUOY})], ignore_index=True)
+    cj, ci, dist = _snap(grid, rows["orig_lon_deg"].values, rows["orig_lat_deg"].values, R)
+    rows["cell_j"], rows["cell_i"], rows["snap_dist_m"] = cj, ci, dist
+    dropped, keep, used = [], np.zeros(len(rows), bool), set()
+    for k, r in rows.iterrows():
+        if r["rtype"] == GAUGE and r["snap_dist_m"] > gc["max_snap_dist_m"]:
+            dropped.append((r["code"], "no wet cell within max_snap_dist_m"))
+        elif (r["cell_j"], r["cell_i"]) in used:
+            dropped.append((r["code"], "duplicate of a station in the same cell"))
+        else:
+            keep[k] = True
+            used.add((r["cell_j"], r["cell_i"]))
+    out = rows[keep].reset_index(drop=True)
+    out["lon_deg"] = grid.lon[out["cell_i"].values]
+    out["lat_deg"] = grid.lat[out["cell_j"].values]
+    is_buoy = (out["rtype"] == BUOY).values
+    out["threshold_m"] = np.where(is_buoy, cfg["buoys"]["threshold_m"], gc["threshold_m"])
+    out["delay_s"] = np.where(is_buoy, cfg["buoys"]["telemetry_delay_s"], gc["telemetry_delay_s"])
+    out = out[["code", "name", "lon_deg", "lat_deg", "cell_j", "cell_i", "rtype", "threshold_m", "delay_s",
+               "orig_lon_deg", "orig_lat_deg", "snap_dist_m"]]
+    out.attrs["dropped"] = dropped
+    return out
+
+
+def trigger_times(gb30, table, sample_interval_s=None):
+    """First time each gauge or buoy raises an alarm, in seconds after origin; inf if never.
+
+    gb30 (E, 240, R_gb): raw eta at 30 s. A receiver triggers at the first sample k with |eta| > threshold_m, i.e. at
+    t = 30 (k + 1) s, and the alarm reaches the warning centre `delay_s` later.
+    """
+    dt = sample_interval_s if sample_interval_s is not None else load_config()["solver"]["sample_interval_s"]
+    gb30 = np.asarray(gb30)
+    exceed = np.abs(gb30) > table["threshold_m"].values[None, None, :]
+    first = exceed.argmax(axis=1)
+    t = dt * (first + 1) + table["delay_s"].values[None, :]
+    return np.where(exceed.any(axis=1), t, np.inf)

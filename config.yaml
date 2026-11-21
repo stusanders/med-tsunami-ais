@@ -12,6 +12,7 @@ paths:                         # relative to the repo / worktree root
   coastline: data/raw/natural_earth/ne_10m_land/ne_10m_land.shp
   piraeus_ais: data/raw/piraeus_ais/unipi_ais_dynamic_oct2017.csv
   historic_dir: data/raw/historic
+  buoys: data/raw/historic/ionian_buoys.csv   # from T26a (Stream C): columns code,name,lon_deg,lat_deg
   grid: data/processed/grid.npz
   receiver_pool: data/processed/receiver_pool.npz
   candidates: data/processed/candidates.csv
@@ -64,6 +65,10 @@ traffic:
   speed_kn: [10.0, 18.0]       # PLACEHOLDER uniform range until T05 Piraeus calibration
   min_speed_kn: 2.0
   range_caps_m: [40000.0, 100000.0]
+  pool_min_per_area: 3         # every traffic area with ships gets at least this many pool points (so no traffic is lost)
+  pool_jitter_tries: 20        # rejection tries to place a pool point inside its cell, area and depth rule
+  lane_grad_sigma_cells: 1.0   # PLACEHOLDER: Gaussian pre-smoothing of log density before the gradient
+  lane_tensor_sigma_cells: 3.0 # PLACEHOLDER: structure-tensor smoothing that sets the lane-direction scale (about 10 km)
 
 ais_noise:
   report_interval_s: 10.0      # Piraeus Oct 2017 median for moving vessels (data/README.md); T05 to confirm
@@ -121,6 +126,9 @@ sources:
 gauges:
   threshold_m: 0.05            # PLACEHOLDER within PLAN range 0.05 to 0.10
   telemetry_delay_s: 180.0     # PLACEHOLDER within PLAN range 120 to 300
+  require_ioc_status: 1        # IOC status code 1 = normal (data/README.md); other codes are test, no-contact or removed
+  exclude_sensors: [atm]       # atmospheric-pressure sensors do not measure sea level
+  max_snap_dist_m: 15000.0     # PLACEHOLDER: stations farther than this from a wet cell are dropped (Black Sea, Marmara)
 
 buoys:
   threshold_m: 0.03            # PLACEHOLDER until T26a sources the Ionian buoy spec
