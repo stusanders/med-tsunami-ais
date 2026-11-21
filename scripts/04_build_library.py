@@ -23,6 +23,7 @@ from tsunami.solver import Solver, make_sampler
 ap = argparse.ArgumentParser()
 ap.add_argument("--stages", default="library,truth,historic")
 ap.add_argument("--batch", type=int, default=None)
+ap.add_argument("--gpu-batch", type=int, default=16, help="scenarios per GPU call; chunk files keep --batch scenarios")
 ap.add_argument("--max-chunks", type=int, default=None, help="per stage; for smoke tests")
 ap.add_argument("--allow-no-buoys", action="store_true")
 ap.add_argument("--root", default=None, help="data root override (smoke tests)")
@@ -76,7 +77,7 @@ def progress(d):
 
 for name, table in stages:
     n = LB.build_stage(name, table, paths[name], solver, grid, cfg, gb_idx, source_eta0, batch=batch,
-                       max_chunks=args.max_chunks, progress=progress)
+                       max_chunks=args.max_chunks, progress=progress, gpu_batch=args.gpu_batch)
     log = LB.read_log(paths[name])
     n_ok, bad = LB.verify_stage(paths[name], R, R_gb, cfg, solver.n_samples) if (paths[name] / "checksums.txt").exists() else (0, [])
     summary["stages"][name] = {"runs": len(table), "chunks_written_this_session": n, "chunks_logged": len(log),

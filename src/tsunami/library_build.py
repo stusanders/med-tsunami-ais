@@ -84,7 +84,25 @@ def source_eta0(table, row_idx, grid, cfg, source_fn):
     return np.stack(out).astype(np.float32)
 
 
-def build_stage(name, table, out_dir, solver, grid, cfg, gb_idx, source_fn, batch=None, max_chunks=None, progress=None):
+def solve_batch(solver, eta0, gb_idx, gpu_batch):
+    """run_library on `eta0` in GPU sub-batches of `gpu_batch`, concatenated on the host.
+
+    The baseline filter keeps float64 cumulative sums of the whole (B, 120, R, 3) block, so B = 64 with R = 20,061 needs
+    more than a T4's 15 GB. The chunk on disk keeps its full size; only the GPU working set is split.
+    """
+    rec, gb = [], []
+    for a in range(0, len(eta0), gpu_batch):
+        r, g = solver.run_library(backend.to_xp(eta0[a:a + gpu_batch]), gb_idx)
+        backend.sync()
+        rec.append(backend.to_numpy(r).astype(np.float32))
+        gb.append(backend.to_numpy(g).astype(np.float32))
+        del r, g
+        if backend.GPU:
+            backend.xp.get_default_memory_pool().free_all_blocks()
+    return np.concatenate(rec), np.concatenate(gb)
+
+
+def build_stage(name, table, out_dir, solver, grid, cfg, gb_idx, source_fn, batch=None, max_chunks=None, progress=None, gpu_batch=None):
     """Solve every run of `table` in chunks of `batch`; skip chunks that are already complete. Returns chunks written now.
 
     `table` needs a unique `run_id` column. index.csv is written first (it is a pure function of the table), so a stage can be
@@ -116,9 +134,7 @@ def build_stage(name, table, out_dir, solver, grid, cfg, gb_idx, source_fn, batc
             break
         t0 = time.perf_counter()
         eta0 = source_eta0(table, rows, grid, cfg, source_fn)
-        recf, gb30 = solver.run_library(backend.to_xp(eta0), gb_idx)
-        backend.sync()
-        recf, gb30 = backend.to_numpy(recf).astype(np.float32), backend.to_numpy(gb30).astype(np.float32)
+        recf, gb30 = solve_batch(solver, eta0, gb_idx, gpu_batch or batch)
         t1 = time.perf_counter()
         if not (np.isfinite(recf).all() and np.isfinite(gb30).all()):
             raise FloatingPointError(f"non-finite values in {name} chunk {c}")

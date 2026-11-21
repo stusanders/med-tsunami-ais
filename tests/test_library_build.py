@@ -104,3 +104,12 @@ def test_kind_column_reaches_source_fn(tmp_path):
     t["amp_scale"] = 1.0
     eta0 = LB.source_eta0(t, np.arange(2), grid, CFG, fn)
     assert np.isclose(eta0[0].max(), 1.0, atol=0.05) and np.isclose(eta0[1].max(), 0.5, atol=0.05)
+
+
+def test_gpu_sub_batches_give_identical_chunks(tmp_path):
+    grid, solver, gb_idx, table, fn = case()
+    a, b = tmp_path / "a", tmp_path / "b"
+    LB.build_stage("t", table, a, solver, grid, CFG, gb_idx, fn, batch=4)
+    LB.build_stage("t", table, b, solver, grid, CFG, gb_idx, fn, batch=4, gpu_batch=1)
+    for c in range(2):
+        assert np.array_equal(np.load(a / f"rec_{c:04d}.npy"), np.load(b / f"rec_{c:04d}.npy"))
