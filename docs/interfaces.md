@@ -61,7 +61,7 @@ These are the only conversion helpers (`tsunami/units.py`): `knots_to_ms`, `ms_t
 | `coast_dist` | (ny, nx) | f32 | m from the cell centre to the nearest land cell centre (0 on land) |
 | `depth_band` | (ny, nx) | int8 | 0: h < 50 m, 1: 50 to 200 m, 2: > 200 m, -1: land |
 
-Indexing is always `[j, i] = [lat, lon]`. `R` is `physics.earth_radius_m`.
+Indexing is always `[j, i] = [lat, lon]`. `R` is `physics.earth_radius_m`. The grid covers the padded model domain (about 795 x 390 cells at 2 arc-min). `wet` keeps only cells connected to the open Mediterranean: land-locked below-sea-level depressions (Qattara, Dead Sea) are land.
 
 ## 3. C-grid layout and equations (T02, T09, A)
 
@@ -78,7 +78,8 @@ Indexing is always `[j, i] = [lat, lon]`. `R` is `physics.earth_radius_m`.
   ```
   These are the spherical equations in PLAN.md Phase 2, with `dx = R cos(phi) dlambda` and `dy = R dphi`.
 - Time step: `dt_cfl = cfl * min(min(dx), dy) / sqrt(g * max(depth))`. Then `n_sub = ceil(30 / dt_cfl)` and `dt = 30 / n_sub`, so every 30 s sample falls exactly on a step.
-- Sponge: within `sponge_width_cells` of an outer edge, multiply eta, u and v by `exp(-gamma * dt)` after each step. `gamma` rises quadratically from 0 at the inner edge of the band to `sponge_max_rate_per_s` at the outer edge.
+- Sponge: within `sponge_width_cells` of an outer edge listed in `solver.sponge_edges` (`[west, north]`), multiply eta, u and v by `exp(-gamma * dt)` after each step. `gamma` rises quadratically from 0 at the inner edge of the band to `sponge_max_rate_per_s` at the outer edge. South and east edges are reflecting walls (land, and the limit of the GEBCO subset).
+- **Domain padding:** the model domain (`domain.lon/lat_min/max_deg`: 10.5 to 37 E, 30 to 43 N) is the area of interest (`domain.area_of_interest`: 12 to 37 E, 30 to 42 N) padded by 1.5 deg west and 1 deg north, so the sponge lies entirely outside the area of interest. `solver_reference.sponge_mask(shape, cfg) -> (ny, nx) bool` marks damped cells.
 - Initial condition: `eta(t=0) = eta0` (the source, instantaneous uplift) and `u = v = 0`.
 
 ## 4. Receiver pool (T04, B): `data/processed/receiver_pool.npz`
@@ -97,7 +98,7 @@ Indexing is always `[j, i] = [lat, lon]`. `R` is `physics.earth_radius_m`.
 | `weight` | f32 | ships: expected vessels present at this pool point (for Poisson draws); 0 otherwise |
 | `area_id` | int32 | traffic Poisson area (the scoring cell via `geometry.cell_index`); -1 otherwise |
 
-Ship pool points satisfy depth >= `min_ship_depth_m`, coast distance <= `pool_max_coast_dist_m` and not in a strait. `R_gb` means the gauge and buoy receivers, `pool.rtype > 0`.
+Ship pool points satisfy depth >= `min_ship_depth_m`, coast distance <= `pool_max_coast_dist_m` and not in a strait. **Every receiver (ship, gauge, buoy) must lie inside `domain.area_of_interest` and outside `sponge_mask`**; gauges or buoys that fail this are dropped (and listed in the T06 output), never snapped into the sponge. `R_gb` means the gauge and buoy receivers, `pool.rtype > 0`.
 
 **Sampling at receivers** (the solver precomputes this once): `solver.make_sampler(grid, pool) -> Sampler(idx: int64 (R, 4), w: float32 (R, 4))`, flat indices into `ny*nx`.
 - Ships: first average u and v from faces to centres (`uc[j,i] = (u[j,i] + u[j,i+1]) / 2`, `vc[j,i] = (v[j,i] + v[j+1,i]) / 2`), then interpolate eta, uc and vc **bilinearly** between the 4 surrounding centres.

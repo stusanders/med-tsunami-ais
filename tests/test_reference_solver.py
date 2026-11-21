@@ -152,3 +152,18 @@ def test_time_step_divides_sample_interval():
     assert dt * n_sub == pytest.approx(CFG["solver"]["sample_interval_s"])
     cfl_dt = CFG["solver"]["cfl"] * min(grid.dx.min(), grid.dy) / np.sqrt(G * 5000.0)
     assert dt <= cfl_dt
+
+
+def test_sponge_only_on_configured_edges_and_outside_area_of_interest():
+    d = CFG["domain"]
+    res = d["resolution_arcmin"] / 60.0
+    lon = np.arange(d["lon_min_deg"] + res / 2, d["lon_max_deg"], res)
+    lat = np.arange(d["lat_min_deg"] + res / 2, d["lat_max_deg"], res)
+    mask = ref.sponge_mask((len(lat), len(lon)), CFG)
+    w = CFG["solver"]["sponge_width_cells"]
+    assert mask[:, :w].all() and mask[-w:, :].all()           # west and north damped
+    assert not mask[w:-w, -w:].any() and not mask[:w, w:-w].any()  # east and south are walls
+    a = d["area_of_interest"]
+    aoi = ((lon[None, :] >= a["lon_deg"][0]) & (lon[None, :] <= a["lon_deg"][1])
+           & (lat[:, None] >= a["lat_deg"][0]) & (lat[:, None] <= a["lat_deg"][1]))
+    assert not (mask & aoi).any()
