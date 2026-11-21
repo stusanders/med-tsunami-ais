@@ -125,8 +125,8 @@ sources:
   aegean_spacing_m: 50000.0
   aegean_exclusion_radius_m: 30000.0   # PLACEHOLDER: keep grid nodes this far from Samos and Amorgos epicentres
   kind: dipole                 # dipole | monopole (T20)
-  # Magnitude scaling, log10(km) = a + b * Mw. Coefficients transcribed by Stream A from the papers' tables
-  # WITHOUT the PDF at hand: VERIFY against the source before the report (marked in outputs/sources_check.md).
+  # Magnitude scaling, log10(km) = a + b * Mw. Strasser coefficients cross-checked by Stream C (T26a/T03 work);
+  # Wells & Coppersmith coefficients still to VERIFY against the PDF (outputs/sources_check.md).
   interface_scaling:           # Strasser, Arango & Bommer (2010) SRL 81(6) 941-950, Table 2, interface events
     length_a: -2.477
     length_b: 0.585
@@ -167,8 +167,8 @@ gauges:
   max_snap_dist_m: 15000.0     # PLACEHOLDER: stations farther than this from a wet cell are dropped (Black Sea, Marmara)
 
 buoys:
-  threshold_m: 0.03            # PLACEHOLDER until T26a sources the Ionian buoy spec
-  telemetry_delay_s: 60.0      # PLACEHOLDER until T26a
+  threshold_m: 0.03            # CAT-INGV buoys run the NOAA DART detection algorithm, 3 cm trigger (T26a, data/README.md)
+  telemetry_delay_s: 60.0      # T26a: < 35 to < 60 s on identical MSM/Sonardyne systems; conservative
 
 calibration:                   # T05 Piraeus analysis thresholds (not physics)
   moving_speed_kn: 1.0         # data/README.md moving-vessel definition
