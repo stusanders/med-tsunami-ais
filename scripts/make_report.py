@@ -576,6 +576,33 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     else:
         sens_html = '<div class="pending"><strong>Pending:</strong> T20 sensitivity runs (shared-noise correlation length, uplift mismatch, monopole vs dipole, 50% ship response, 10% AIS gaps / near-source outage).</div>'
 
+    # Samos 2020 gauge comparison table (outputs/historic_samos_gauges.csv)
+    samos_csv = out_dir / "historic_samos_gauges.csv"
+    if samos_csv.exists():
+        sg = pd.read_csv(samos_csv)
+        n_comp = int(sg["comparable"].astype(bool).sum())
+        n_ok = int((sg["comparable"].astype(bool) & sg["within_factor_2"].astype(bool)).sum())
+        sg_show = pd.DataFrame(
+            {
+                "Station": sg["station"],
+                "Name": sg["name"],
+                "Snap (km)": sg["snap_km"].map(lambda v: f"{v:.1f}"),
+                "Recorded crest (cm)": (100.0 * sg["recorded_crest_m"]).map(lambda v: f"{v:.1f}"),
+                "Sim (cm, Green's-law)": (100.0 * sg["simulated_max_abs_m"] * sg["green_factor"]).map(lambda v: f"{v:.1f}"),
+                "Ratio (corr.)": sg["ratio_corrected"].map(lambda v: f"{v:.2f}"),
+                "Comparable": sg["comparable"].map(lambda v: "yes" if bool(v) else "no (enclosed bay)"),
+                "Within 2×": sg["within_factor_2"].map(lambda v: "yes" if bool(v) else "no"),
+            }
+        )
+        samos_gauges_html = (
+            f"<p><strong>Samos 2020 gauge amplitude check (<code>outputs/historic_samos_gauges.csv</code>):</strong> "
+            f"<strong>{n_ok} of {n_comp} comparable IOC tide gauges</strong> fall within a factor of 2 of the recorded wave "
+            f"(e.g. Kos <code>kos1</code>: <strong>11.9 cm</strong> recorded vs <strong>~6 cm</strong> Green's-law corrected simulated, ratio <strong>0.54</strong>; Marmaris excluded as not comparable at 2 arc-min).</p>"
+            + _df_to_html(sg_show)
+        )
+    else:
+        samos_gauges_html = ""
+
     # Validation check figures
     val_dir = out_dir / "validation"
     val_figs = []
@@ -634,7 +661,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   {val_figs_html}
   <h3>Piraeus Real AIS Calibration (T05) &amp; Filtered Noise Validation</h3>
   {_read_text_pre(out_dir / "piraeus_calibration.md", "<code>outputs/piraeus_calibration.md</code> not found.")}
-  <p><strong>Steady-ship filtered noise check (<code>outputs/noise_check_piraeus.md</code>):</strong> Applying the same 1-minute averaging and causal trailing baseline to steady Piraeus ships gives <strong>0.058–0.060 m/s</strong> robust SD (0.073 m/s plain SD), about <strong>20% below</strong> simulated calm noise at the same speed and window (0.070–0.076 m/s). Because no Saronic Gulf ship stays steady for 45 min (longest continuous steady run: 34 min), the comparison uses <code>W = 10–20 min</code> with simulation computed at the same <code>W</code>; the real residual is flat across <code>W</code>. (The 0.25 m/s quoted in T23 is the raw 10-second per-report spread before averaging and baseline removal.) Calm noise is therefore not optimistic relative to Piraeus and <code>ais_noise</code> is unchanged. Caveats: the Saronic Gulf is sheltered (open-sea currents/eddies are likely larger, bracketed by the shared-noise term and moderate/rough regimes), the check uses <code>W = 10–20 min</code>, and only steady segments are included (turning artefacts excluded, consistent with assumed yaw correction).</p>
+  <p><strong>Steady-ship filtered noise check (<code>outputs/noise_check_piraeus.md</code>):</strong> Applying the same 1-minute averaging and causal trailing baseline to steady Piraeus ships gives <strong>0.058–0.060 m/s</strong> robust SD (0.073 m/s plain SD), <strong>17–21% below</strong> simulated calm noise (real/simulated = 0.79–0.83) at the same speed and window (0.070–0.076 m/s). Because no Saronic Gulf ship stays steady for 45 min (longest continuous steady run: 34 min), the comparison uses <code>W = 10–20 min</code> with simulation computed at the same <code>W</code>; the real residual is flat across <code>W</code>. (The 0.25 m/s quoted in T23 is the raw 10-second per-report spread before averaging and baseline removal.) Calm noise is therefore not optimistic relative to Piraeus and <code>ais_noise</code> is unchanged. Caveats: the Saronic Gulf is sheltered (open-sea currents/eddies are likely larger, bracketed by the shared-noise term and moderate/rough regimes), the check uses <code>W = 10–20 min</code>, and only steady segments are included (turning artefacts excluded, consistent with assumed yaw correction).</p>
   {_figure_html(out_dir / "noise_check_piraeus.png", "Piraeus steady-ship drift after 1-min averaging and causal baseline (W = 10–20 min) vs simulated calm/moderate/rough noise at the same speed and window.", out_dir, embed)}
   {_read_text_pre(out_dir / "noise_check_piraeus.md", "<code>outputs/noise_check_piraeus.md</code> not found.")}
   <h3>Real-Data Yaw Correction Check on Piraeus AIS (T23)</h3>
@@ -689,11 +716,11 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
 
   <h3>5.3 Map 2: Detection Floor by Source Location, Operator &amp; Weather Regime</h3>
   <div class="callout">
-    <strong>Core T17/T18 finding (strictly split by operator and region — never pooled):</strong>
+    <strong>Core conclusion (aligned with <code>docs/DEMO_SCRIPT.md</code>; strictly split by operator and region — never pooled):</strong>
     <ul>
-      <li><strong>AIS sideways drift (existing ships, calm, 40 km / 100 km):</strong> Useful only for large tsunamis, with strong regional contrast. At 40 km calm: Aegean <strong>60%</strong> at Mw 7.60 (cand 7.5+0.1) and <strong>97%</strong> at Mw 7.85 (Aegean tested up to Mw 7.85); Cyprus <strong>49%</strong> at Mw 8.10 and <strong>98%</strong> at Mw 8.35; Calabrian <strong>34%</strong> at Mw 8.35 and <strong>89%</strong> at Mw 8.60; Hellenic <strong>16%</strong> at Mw 8.35 and <strong>79%</strong> at Mw 8.60. Extending to 100 km lifts arc detection modestly (e.g. Hellenic 24% / 83% at Mw 8.35 / 8.60), while moderate and rough weather cut deep-arc AIS detection sharply (Hellenic Mw 8.60 drops from 83% calm to 47% moderate and 15% rough). At small magnitudes, the ~1–4% AIS detection rate equals the quiet-day false-alarm floor.</li>
-      <li><strong>Ship GPS height (upgrade scenario):</strong> Reaches ~<strong>100%</strong> confirmation from Mw 7.10 everywhere (and 100% of Aegean events at every magnitude down to Mw 6.60), with median confirmation <strong>1–9 min</strong> (40 km) / <strong>1–4 min</strong> (100 km) and <strong>72–92%</strong> of detections arriving before the first coastal tide gauge.</li>
-      <li><strong>Mandatory GPS caveats:</strong> Ship GPS speed comes from floating ships directly above the source rising with the sea surface at <code>t = 0</code> (ships float, unlike land-mounted gauges). That assumes an instantaneous rupture, 5 cm/min GPS height noise with no heave or weather effect (<code>config.yaml</code> <code>gps</code>), and ships inside the source footprint.</li>
+      <li><strong>AIS drift (today's ships):</strong> Confirms only the largest events — <strong>Aegean from Mw 7.5</strong> (60% at truth 7.60, 97% at 7.85; calm 40 km), <strong>Cyprus from Mw 8</strong> (49% at 8.10, 98% at 8.35), and <strong>Hellenic and Calabrian only near Mw 8.5</strong> (Calabrian 34% at 8.35 / 89% at 8.60; Hellenic 16% at 8.35 / <strong>79%</strong> at 8.60, typically taking <strong>84 min</strong> and placing the source within <strong>13 km</strong> vs <strong>5.5 min</strong> for the first tide gauge) — and usually <strong>after the tide gauges</strong> (at most <strong>12%</strong> of calm 40 km detections come before the first gauge, highest in the Aegean; rough weather degrades AIS further). Real Piraeus ship data was <strong>17–21% less noisy</strong> than our calm setting, suggesting the drift results are, if anything, cautious. At small magnitudes, the ~1–4% AIS detection rate equals the quiet-day false-alarm floor (held-out FAR <strong>0.2–1.6%</strong> vs <strong>100%</strong> for the literal 3σ single-ship rule).</li>
+      <li><strong>Precise GPS on the same ships:</strong> Confirms <strong>from Mw 7</strong> everywhere within minutes (median <strong>1–9 min</strong> at 40 km; <strong>100%</strong> of Hellenic Mw 8.6 events in a typical <strong>1 min</strong>), <strong>before the first tide gauge in 72 to 92% of detections</strong>.</li>
+      <li><strong>Mandatory GPS assumptions:</strong> GPS speed comes from floating ships directly above the source rising with the sea surface at <code>t = 0</code> (unlike land-mounted gauges), assuming an <strong>instantaneous rupture</strong>, <strong>5 cm GPS noise with no weather effect</strong> (<code>config.yaml</code> <code>gps</code>), and ships inside the source footprint.</li>
     </ul>
   </div>
   {map2_summary_html}
@@ -713,6 +740,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     <li><strong>Network matched filter vs single-ship rules:</strong> At equal (~1%) false-alarm rate, the matched-filter network dramatically outperforms calibrated single-ship detection across every arc and Aegean stratum (e.g. calm 40 km AIS: Aegean Mw 7.60 <strong>59.7% vs 13.6%</strong>, Cyprus Mw 8.35 <strong>98.2% vs 45.9%</strong>, Calabrian Mw 8.60 <strong>88.9% vs 12.7%</strong>, Hellenic Mw 8.60 <strong>78.8% vs 8.7%</strong>).</li>
     <li><strong>Single-ship rules give no location:</strong> <code>best_cand_id</code> is unset (<code>-1</code> / <code>NaN</code>) for both single-ship detectors (expected). Inazu's literal 3σ single-ship rule (<code>single_literal</code>) has a <strong>100.0% quiet-day false-alarm rate</strong> across all 12 strata.</li>
     <li><strong>Regime-invariant thresholds &amp; held-out FAR:</strong> Because the network score is normalised by each regime's own noise, thresholds and held-out FAR are nearly identical across calm, moderate, and rough weather — so the measured <strong>1.6%</strong> held-out FAR for AIS at 100 km (<strong>0.2%</strong> at 40 km; <strong>0.6%</strong> for GPS at 40 &amp; 100 km) is effectively <strong>one quiet-day measurement per (operator, range cap)</strong>, not three independent measurements.</li>
+    <li><strong>Planted off-grid twins of Mw &ge; 8 (calm, 40 km):</strong> Found on <strong>37%</strong> of trials by AIS drift and <strong>100%</strong> by precise GPS (assuming instantaneous rupture and 5 cm GPS noise with no weather effect); typical AIS location error is <strong>15 km</strong> and magnitude error <strong>0.04</strong> across detected twins.</li>
     <li><strong>Mis-located detections in moderate/rough AIS:</strong> Location errors are reported on <em>detections only</em>, alongside the share of detections within 100 km of the truth. In calm AIS, 91–97% of detections land within 100 km (off-grid twin median 15 km, p90 37 km, 93–94% ≤ 100 km). In moderate and rough AIS, low-SNR noise triggers can match distant shelf templates, pushing twin p90 error to <strong>628–697 km</strong> and cutting the share within 100 km to <strong>65.1%</strong> (moderate 100 km) and <strong>58.1%</strong> (rough 100 km).</li>
   </ul>
   <h4>Stratified Detector Comparison (Truth Map 2; Calm 40 km &amp; 100 km, Moderate 100 km)</h4>
@@ -724,6 +752,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
 
   <h3>5.6 Historic Event Replays (Samos 2020 &amp; Amorgos 1956)</h3>
   <p>Both Samos (30 Oct 2020, Mw 7.0, USGS <code>us7000c7y0</code>; Kiratzi et al. 2022) and Amorgos (9 Jul 1956, Mw 7.7, Okal et al. 2009) are normal-fault (subsidence-first, <code>polarity = -1</code>) Aegean earthquakes. Replays are scored against both the arc-only catalogue (showing the blind spot of an arc-restricted library) and the arc+Aegean catalogue, with Samos simulated amplitudes compared to 14 IOC Aegean gauges (e.g. <code>kos1</code> +11.9 cm crest) using Green's-law shoaling. Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip) (~2.4–2.5× larger Aegean/Samos waves), so the Samos comparison is a consistency check rather than fully independent validation.</p>
+  {samos_gauges_html}
   {_read_text_pre(out_dir / "historic_replays.md", "<code>outputs/historic_replays.md</code> (T26) pending from Stream B.")}
 
   <h3>5.7 Sensitivity Analysis (T20)</h3>
@@ -731,7 +760,11 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
 </section>
 
 <section id="assumptions">
-  <h2>6. Assumptions &amp; Limitations</h2>
+  <h2>6. Conclusions, Assumptions &amp; Limitations</h2>
+  <div class="callout">
+    <strong>Bottom line (aligned with <code>docs/DEMO_SCRIPT.md</code>):</strong>
+    Ships already at sea using AIS sideways drift confirm only the largest Mediterranean tsunamis (<strong>Aegean from Mw 7.5</strong>, <strong>Cyprus from Mw 8</strong>, <strong>Hellenic and Calabrian only near Mw 8.5</strong>) and usually <strong>after</strong> coastal tide gauges (at most <strong>12%</strong> of calm 40 km detections come first; typical Hellenic Mw 8.6 confirmation is <strong>84 min</strong> vs <strong>5.5 min</strong> for the first gauge). Real Greek ship data was <strong>17–21% less noisy</strong> than our calm setting, so the drift results are cautious rather than optimistic. Fitting the same ships with <strong>precise GPS</strong> confirms tsunamis <strong>from Mw 7</strong> within minutes, <strong>before the first gauge in 72 to 92% of detections</strong> — assuming an <strong>instantaneous rupture</strong>, <strong>5 cm GPS noise with no weather effect</strong>, and floating ships inside the source footprint.
+  </div>
   <ol>
     <li><strong>Yaw correction assumed applied:</strong> Simulated noise levels come from Inazu et al. (2020) measured <em>after</em> yaw correction. Without it, turning-ship noise would be higher and detection harder (illustrated in T24).</li>
     <li><strong>Weather-regime multipliers are placeholders:</strong> Calm/moderate/rough noise scaling (×1, ×1.5, ×2) has no published AIS-vs-sea-state calibration.</li>
