@@ -225,6 +225,7 @@ Those marked (S) are tested in the sensitivity runs (T20).
 9. Cell weights use a diagonal approximation to the noise; correlated noise between neighbouring cells is not modelled (full covariance is a stretch goal).
 10. Not modelled: captains reacting to the earthquake, GPS jamming in the eastern Mediterranean, internal waves in narrow straits, landslide and volcanic sources.
 11. Ships confirm large waves only; their silence cannot cancel an alert.
+12. Domain edges: the model domain is padded 1.5 degrees west and 1 degree north so the absorbing sponge lies outside the area of interest. The south (30 N) and east (37 E) edges are closed walls (mostly land, and the limit of the GEBCO subset), so waves reflecting at the southern Gulf of Sidra and the far east edge are not physical.
 
 ## 7. Guardrails
 
