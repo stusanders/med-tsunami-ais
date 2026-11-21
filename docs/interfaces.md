@@ -23,7 +23,8 @@ Every stream codes against this file, not against another stream's unfinished co
 | `scoring.py` | A | T15 |
 | `baseline_detector.py` | A | T25 |
 | `grid.py`, `ships.py`, `gauges.py` | B | T01, T04, T06 |
-| `sources.py`, `viz.py`, `bench.py` | C | T03, T07, T08 |
+| `sources.py` | A (moved from C by the human) | T03 |
+| `viz.py`, `bench.py` | C | T07, T08 |
 
 ## 1. Units and sign conventions
 
@@ -139,13 +140,14 @@ Count per area: `N_a ~ Poisson(sum of pool weight in area a)`, capped at the num
 
 ## 7. Sources (T03, C)
 
-`sources.candidate_table(cfg) -> pandas.DataFrame`, saved to `data/processed/candidates.csv`. Arc positions are taken every 25 km along the trench-side edge of the EFSM20 subduction-interface meshes (`sources.arc_geometry` in config; Hellenic GRSS001, Calabrian ITSS001, Cyprus CYSS001), with strike and dip from the mesh. The row order **is** the library order, so `cand_id = 0..C-1`.
+`sources.candidate_table(cfg, grid=None, save=True) -> pandas.DataFrame`, saved to `data/processed/candidates.csv` (1,077 candidates at 140 positions: Hellenic 41, Calabrian 13, Cyprus 25 positions x 9 Mw; Aegean 61 x 6 Mw; library about 31 GB float32 on the Colab runtime). Arc positions are taken every 25 km along the trench-side edge of the EFSM20 subduction-interface meshes (`sources.arc_geometry` in config; Hellenic GRSS001, Calabrian ITSS001, Cyprus CYSS001), with strike and dip from the mesh. The row order **is** the library order, so `cand_id = 0..C-1`.
 
 | Column | Meaning |
 |---|---|
 | `cand_id`, `pos_id` | int; the same `pos_id` for all magnitudes at a position |
 | `region` | `hellenic`, `calabrian`, `cyprus` or `aegean` |
-| `lon_deg`, `lat_deg` | centre of the rupture (uplift) |
+| `lon_deg`, `lat_deg` | centre of the uplift lobe (arcs: trench point + `uplift_centre_downdip_frac` x W cos(dip) down-dip; Aegean: the grid node) |
+| `trench_lon_deg`, `trench_lat_deg` | EFSM20 trench-edge point (arcs) or grid node (Aegean); `perturb` moves this point |
 | `strike_deg`, `dip_deg` | Aki-Richards: dip direction = strike + 90 deg (down-dip = landward for arcs) |
 | `mw` | magnitude: arcs 6.5 to 8.5 (9 bins, `magnitudes(cfg)`); Aegean 6.5 to `sources.aegean_mw_max` = 7.75 (6 bins) |
 | `length_m`, `width_m`, `slip_m` | from the scaling relation in config |
@@ -154,7 +156,7 @@ Count per area: `N_a ~ Poisson(sum of pool weight in area a)`, capped at the num
 
 - `sources.source_eta0(grid, row, cfg, kind=None, polarity=None) -> (ny, nx) float32`. `row` is a table row or dict with the columns above. `kind` is `dipole` or `monopole` (default from config); `polarity` is +1 or -1 (default from the row).
 - `sources.perturb(row, along_strike_m, dmw, cfg) -> dict`, a new source moved along strike with rescaled dimensions.
-- `sources.custom_source(lon_deg, lat_deg, strike_deg, dip_deg, mw, fault, cfg, length_m=None, width_m=None, slip_m=None) -> dict`, where `fault` is `thrust` (polarity +1) or `normal` (polarity -1, subsidence-first). Used for Samos and Amorgos.
+- `sources.custom_source(lon_deg, lat_deg, strike_deg, dip_deg, mw, fault, cfg, length_m=None, width_m=None, slip_m=None, region='aegean', name='') -> dict`, where `fault` is `thrust` (polarity +1) or `normal` (polarity -1, subsidence-first). Used for Samos and Amorgos.
 - `sources.dipole_volume(eta0, grid) -> (uplift_m3, subsidence_m3, net_m3)`.
 - Truth and historic runs use the same columns, plus `run_kind` (`truth_map2`, `truth_twin` or `historic`), `parent_cand_id` (-1 if none) and `name`.
 
