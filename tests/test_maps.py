@@ -39,14 +39,16 @@ def test_map2_and_map3_synthetic_end_to_end(tmp_path):
         [("hellenic", 23.0, 35.0), ("calabrian", 16.8, 37.5), ("aegean", 25.5, 37.2)]
     ):
         for mw in (6.6, 7.1, 7.6, 8.1):
+            # Simulate downdip centroid shift with Mw on arcs (must still collapse to 1 position per pos_id!)
+            shift_deg = 0.02 * (mw - 6.6) if region != "aegean" else 0.0
             truth_rows.append(
                 dict(
                     run_id=run_id,
                     run_kind="truth_map2",
                     region=region,
                     pos_id=pos_id,
-                    lon_deg=lon,
-                    lat_deg=lat,
+                    lon_deg=lon + shift_deg,
+                    lat_deg=lat + shift_deg,
                     mw=mw,
                 )
             )
@@ -127,6 +129,7 @@ def test_map2_and_map3_synthetic_end_to_end(tmp_path):
         & (map2_df["regime"] == "calm")
         & np.isclose(map2_df["range_cap_m"], 100000.0)
     ]
+    assert len(calm_ais) == 3  # 3 unique positions even when arc centroid shifts with Mw
     assert np.allclose(calm_ais["mw_90"].to_numpy(), 7.6)
     assert np.allclose(calm_ais["far_hold"].to_numpy(), 0.016)
 

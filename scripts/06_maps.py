@@ -39,9 +39,9 @@ OPERATORS = ("ais", "gps")
 REGIONS = ("hellenic", "calabrian", "cyprus", "aegean")
 DETECTORS = ("network", "single_calibrated", "single_literal")
 BENCHMARKS = (
-    ("nearest_gauge_s", "vs. coast's nearest gauge"),
+    ("nearest_gauge_s", "vs. nearest gauge"),
     ("first_gauge_s", "vs. first gauge anywhere"),
-    ("first_instrument_s", "vs. first instrument (incl. Ionian buoys)"),
+    ("first_instrument_s", "vs. first instrument (+ buoys)"),
 )
 
 GPS_CAVEAT = (
@@ -115,9 +115,11 @@ def compute_map2_summary(sweep_df, truth_df, detector="network", thresholds_df=N
 
     far_map = _far_lookup(thresholds_df)
     rows = []
-    group_cols = ["operator", "range_cap_m", "regime", "pos_id", "region", "lon_deg", "lat_deg"]
+    group_cols = ["operator", "range_cap_m", "regime", "region", "pos_id"]
     for keys, grp in df.groupby(group_cols, sort=False):
-        op, rcap, reg, pos_id, region, lon, lat = keys
+        op, rcap, reg, region, pos_id = keys
+        lon = float(grp["lon_deg"].median())
+        lat = float(grp["lat_deg"].median())
         mw90 = _min_mw_at_threshold(grp, 0.90)
         mw50 = _min_mw_at_threshold(grp, 0.50)
         ref_mw = mw90 if np.isfinite(mw90) else float(grp["mw"].max())
@@ -310,8 +312,8 @@ def plot_map2(map2_df, cfg, out_path, range_cap_m=100000.0):
             arc90 = int(arcs["mw_90"].notna().sum())
             op_label = "AIS drift" if op == "ais" else "Ship GPS height*"
             ax.set_title(
-                f"{op_label} — {reg.capitalize()} | ≥90%: Aegean {aeg90}/{len(aeg)}, Arcs {arc90}/{len(arcs)}",
-                fontsize=9.2,
+                f"{op_label} — {reg.capitalize()}\nPositions ≥90%: Aegean {aeg90}/{len(aeg)}, Arcs {arc90}/{len(arcs)}",
+                fontsize=9.0,
             )
             if r_idx == 0:
                 ax.set_xlabel("")
@@ -330,8 +332,9 @@ def plot_map2(map2_df, cfg, out_path, range_cap_m=100000.0):
         out_path,
         f"Map 2: Smallest Earthquake Magnitude Ships Confirm (≥90% of Draws, {rc_km} km Range Cap)",
         (
-            "Filled circles show the 90% detection floor (off-grid truth Mw = candidate bin + 0.1; Aegean tested to Mw 7.85, "
-            "subduction arcs to Mw 8.60); hollow rings reach 50% but not 90%; grey circles stay below 50%. "
+            "Filled circles show the 90% detection floor per source position (62 Aegean to Mw 7.85, 79 arc positions to Mw 8.60; "
+            "Aegean sweep rates are for earthquakes shaped like the catalogue — replayed Amorgos/Samos faults were not detected by AIS). "
+            "Hollow rings reach 50% but not 90%; grey circles stay below 50%. "
             f"*{GPS_CAVEAT}"
         ),
     )
@@ -432,8 +435,8 @@ def plot_map2_uncertainty(sweep_df, truth_df, cfg, out_path, range_cap_m=100000.
         out_path,
         f"Detection Probability vs. Magnitude Split by Operator and Region ({rc_km} km Range Cap)",
         (
-            "Shaded bands show 95% binomial CI across traffic × noise draws; horizontal lines mark 90%, 50%, and the measured "
-            "held-out quiet-day false-alarm floor (at low Mw the AIS ~1–4% detection rate equals the false-alarm floor). "
+            "Shaded bands show 95% binomial CI across draws; lines mark 90%, 50%, and held-out quiet-day FAR "
+            "(low-Mw AIS ~1–4% equals FAR; Aegean sweep rates are for earthquakes shaped like the catalogue — replayed Amorgos/Samos were not detected by AIS). "
             "GPS curves are identical across calm/moderate/rough because config gps noise has no weather multiplier. "
             f"*{GPS_CAVEAT}"
         ),
@@ -560,8 +563,8 @@ def plot_map3(map3_df, gauge_table, cfg, out_path, operator=None, regime=None):
 
             overall = float(valid[col_med].median()) if not valid.empty else np.nan
             n_pos = int((valid[col_med] > 0).sum()) if not valid.empty else 0
-            med_txt = f"med {overall:+.1f} min; >0 at {n_pos}/{len(valid)}" if np.isfinite(overall) else "n/a"
-            ax.set_title(f"{op_label} {rc_km} km — {blabel} ({med_txt})", fontsize=9.0)
+            med_txt = f"median {overall:+.1f} min | faster: {n_pos}/{len(valid)} coasts" if np.isfinite(overall) else "n/a"
+            ax.set_title(f"{op_label} {rc_km} km — {blabel}\n{med_txt}", fontsize=8.8)
             if r_idx < len(range_caps) - 1:
                 ax.set_xlabel("")
             if c_idx > 0:

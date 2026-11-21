@@ -576,6 +576,51 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     else:
         sens_html = '<div class="pending"><strong>Pending:</strong> T20 sensitivity runs (shared-noise correlation length, uplift mismatch, monopole vs dipole, 50% ship response, 10% AIS gaps / near-source outage).</div>'
 
+    # T26 Historic replays summary table (outputs/historic_replays_summary.csv: arcs_only vs arcs_plus_aegean)
+    hr_csv = out_dir / "historic_replays_summary.csv"
+    if hr_csv.exists():
+        hrdf = pd.read_csv(hr_csv)
+        def _fmt_cell(row):
+            pct = 100.0 * float(row["detected_frac"])
+            if pd.notna(row["median_confirm_min"]) and pct > 0:
+                return f"{pct:.0f}% ({float(row['median_confirm_min']):.0f} min)"
+            return f"{pct:.0f}%"
+        # Side-by-side Arcs-only vs Arcs+Aegean comparison (network & calibrated single-ship)
+        hr_cal = hrdf[hrdf["detector"] != "single_literal"].copy()
+        piv_rows = []
+        for (ev, op, cap, det), grp in hr_cal.groupby(["name", "operator", "range_cap_m", "detector"], sort=False):
+            by_key = {(r["catalogue"], r["regime"]): _fmt_cell(r) for _, r in grp.iterrows()}
+            piv_rows.append(
+                {
+                    "Event": "Amorgos 1956 (Mw 7.7)" if ev == "amorgos_1956" else "Samos 2020 (Mw 7.0)",
+                    "Op": str(op).upper(),
+                    "Cap (km)": int(round(float(cap) / 1000.0)),
+                    "Detector": det,
+                    "Arcs only — Calm": by_key.get(("arcs_only", "calm"), "—"),
+                    "Arcs only — Mod": by_key.get(("arcs_only", "moderate"), "—"),
+                    "Arcs only — Rough": by_key.get(("arcs_only", "rough"), "—"),
+                    "Arcs+Aegean — Calm": by_key.get(("arcs_plus_aegean", "calm"), "—"),
+                    "Arcs+Aegean — Mod": by_key.get(("arcs_plus_aegean", "moderate"), "—"),
+                    "Arcs+Aegean — Rough": by_key.get(("arcs_plus_aegean", "rough"), "—"),
+                    "_ord": 0 if ev == "amorgos_1956" else 1,
+                }
+            )
+        piv_df = (
+            pd.DataFrame(piv_rows)
+            .sort_values(["_ord", "Op", "Cap (km)", "Detector"])
+            .drop(columns=["_ord"])
+        )
+        historic_replays_tbl_html = (
+            _df_to_html(piv_df)
+            + '<p style="font-size:0.86rem;color:var(--muted);margin-top:0.35rem;">'
+              "Simulated first tide gauge (5 cm + 180 s): <strong>4.5 min</strong> for Amorgos 1956 (<code>amor</code>), "
+              "<strong>80.0 min</strong> for Samos 2020. "
+              "Inazu's literal 3&sigma; single-ship rule (<code>single_literal</code>) triggers on 100% of trials at 1 min across all strata "
+              "because of its 100% quiet-day false-alarm rate (full table in expandable T26 notes below).</p>"
+        )
+    else:
+        historic_replays_tbl_html = ""
+
     # Samos 2020 gauge comparison table (outputs/historic_samos_gauges.csv)
     samos_csv = out_dir / "historic_samos_gauges.csv"
     if samos_csv.exists():
@@ -718,18 +763,18 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   <div class="callout">
     <strong>Core conclusion (aligned with <code>docs/DEMO_SCRIPT.md</code>; strictly split by operator and region — never pooled):</strong>
     <ul>
-      <li><strong>AIS drift (today's ships):</strong> Confirms only the largest events — <strong>Aegean from Mw 7.5</strong> (60% at truth 7.60, 97% at 7.85; calm 40 km), <strong>Cyprus from Mw 8</strong> (49% at 8.10, 98% at 8.35), and <strong>Hellenic and Calabrian only near Mw 8.5</strong> (Calabrian 34% at 8.35 / 89% at 8.60; Hellenic 16% at 8.35 / <strong>79%</strong> at 8.60, typically taking <strong>84 min</strong> and placing the source within <strong>13 km</strong> vs <strong>5.5 min</strong> for the first tide gauge) — and usually <strong>after the tide gauges</strong> (at most <strong>12%</strong> of calm 40 km detections come before the first gauge, highest in the Aegean; rough weather degrades AIS further). Real Piraeus ship data was <strong>17–21% less noisy</strong> than our calm setting, suggesting the drift results are, if anything, cautious. At small magnitudes, the ~1–4% AIS detection rate equals the quiet-day false-alarm floor (held-out FAR <strong>0.2–1.6%</strong> vs <strong>100%</strong> for the literal 3σ single-ship rule).</li>
+      <li><strong>AIS drift (today's ships):</strong> Confirms only the largest events — <strong>Aegean from Mw 7.5</strong> (60% at truth 7.60, 97% at 7.85; calm 40 km — <em>for earthquakes shaped like the catalogue</em>; replayed real Aegean faults Amorgos 1956 and Samos 2020 were <strong>not detected</strong> by ship drift, at 1–4% = the false-alarm level), <strong>Cyprus from Mw 8</strong> (49% at 8.10, 98% at 8.35), and <strong>Hellenic and Calabrian only near Mw 8.5</strong> (Calabrian 34% at 8.35 / 89% at 8.60; Hellenic 16% at 8.35 / <strong>79%</strong> at 8.60, typically taking <strong>84 min</strong> and placing the source within <strong>13 km</strong> vs <strong>5.5 min</strong> for the first tide gauge) — and usually <strong>after the tide gauges</strong> (at most <strong>12%</strong> of calm 40 km detections come before the first gauge, highest in the Aegean <em>for earthquakes shaped like the catalogue</em>; rough weather degrades AIS further). Real Piraeus ship data was <strong>17–21% less noisy</strong> than our calm setting, suggesting the drift results are, if anything, cautious. At small magnitudes, the ~1–4% AIS detection rate equals the quiet-day false-alarm floor (held-out FAR <strong>0.2–1.6%</strong> vs <strong>100%</strong> for the literal 3σ single-ship rule).</li>
       <li><strong>Precise GPS on the same ships:</strong> Confirms <strong>from Mw 7</strong> everywhere within minutes (median <strong>1–9 min</strong> at 40 km; <strong>100%</strong> of Hellenic Mw 8.6 events in a typical <strong>1 min</strong>), <strong>before the first tide gauge in 72 to 92% of detections</strong>.</li>
       <li><strong>Mandatory GPS assumptions:</strong> GPS speed comes from floating ships directly above the source rising with the sea surface at <code>t = 0</code> (unlike land-mounted gauges), assuming an <strong>instantaneous rupture</strong>, <strong>5 cm GPS noise with no weather effect</strong> (<code>config.yaml</code> <code>gps</code>), and ships inside the source footprint.</li>
     </ul>
   </div>
   {map2_summary_html}
-  {_figure_html(out_dir / "map2.png", "Map 2 (T18, 100 km range cap): Smallest off-grid truth magnitude confirmed within 2 h in ≥90% of draws (filled circles) or ≥50% (rings), split by operator (AIS drift vs Ship GPS height*) and weather regime. *GPS speed reflects floating ships above the source rising at t=0 under instantaneous rupture and 5 cm/min heave-free noise.", out_dir, embed, "<code>outputs/map2.png</code> pending T17 sweep parquet -> T18.")}
-  {_figure_html(out_dir / "map2_40km.png", "Map 2 (T18, 40 km range cap): Same 90% / 50% detection floor at the 40 km coastal AIS range cap. *GPS caveat as above.", out_dir, embed, "")}
-  {_figure_html(out_dir / "map2_uncertainty.png", "Detection probability vs. truth magnitude strictly split by operator (rows: AIS drift, Ship GPS height*) and source region (columns: Hellenic, Calabrian, Cyprus, Aegean; Aegean stops at Mw 7.85) at 100 km range cap, with 95% binomial CI bands, calibrated single-ship baseline, and the measured held-out quiet-day false-alarm floor (dash-dot red). *GPS caveat as above.", out_dir, embed, "<code>outputs/map2_uncertainty.png</code> pending T17 sweep parquet -> T18.")}
+  {_figure_html(out_dir / "map2.png", "Map 2 (T18, 100 km range cap): Smallest off-grid truth magnitude confirmed within 2 h in ≥90% of draws (filled circles) or ≥50% (rings) across the 141 unique source positions (62 Aegean, 79 Arcs), split by operator (AIS drift vs Ship GPS height*) and weather regime. Sweep-based Aegean floors are for earthquakes shaped like the catalogue (T26 historic replays of Amorgos 1956 and Samos 2020 were not detected by AIS drift). *GPS speed reflects floating ships above the source rising at t=0 under instantaneous rupture and 5 cm/min heave-free noise.", out_dir, embed, "<code>outputs/map2.png</code> pending T17 sweep parquet -> T18.")}
+  {_figure_html(out_dir / "map2_40km.png", "Map 2 (T18, 40 km range cap): Same 90% / 50% detection floor at the 40 km coastal AIS range cap (sweep-based Aegean floors are for earthquakes shaped like the catalogue). *GPS caveat as above.", out_dir, embed, "")}
+  {_figure_html(out_dir / "map2_uncertainty.png", "Detection probability vs. truth magnitude strictly split by operator (rows: AIS drift, Ship GPS height*) and source region (columns: Hellenic, Calabrian, Cyprus, Aegean; Aegean stops at Mw 7.85, for earthquakes shaped like the catalogue) at 100 km range cap, with 95% binomial CI bands, calibrated single-ship baseline, and the measured held-out quiet-day false-alarm floor (dash-dot red). *GPS caveat as above.", out_dir, embed, "<code>outputs/map2_uncertainty.png</code> pending T17 sweep parquet -> T18.")}
 
   <h3>5.4 Map 3: Warning Time Added Over Tide Gauges &amp; 2025 Ionian Buoys</h3>
-  <p>Warning-time gains use <code>first_gauge_s</code>, <code>nearest_gauge_s</code>, and <code>first_instrument_s</code> directly from the T17 sweep parquet (all computed on the <code>η(t) − η(0)</code> gauge trigger). Across Map 2 events, median first-gauge trigger time is <strong>8–21 min</strong> (Cyprus 8 min, Calabrian 10 min, Hellenic 13 min, Aegean 21 min). Existing <strong>AIS sideways drift does not beat tide gauges</strong> in median time: calm AIS median confirmation is <strong>41–85 min</strong> (40 km) / <strong>39–82 min</strong> (100 km), lagging coastal gauges by <strong>−41 to −47 min</strong> across coasts (only 0.1–12.9% of detections precede the first gauge; highest in the Aegean at 12–13%, with Piraeus near parity at +1.0 min vs nearest gauge in calm 100 km). By contrast, <strong>Ship GPS height</strong> confirms <strong>+5.2 to +8.5 min</strong> earlier than gauges across coasts (faster at 29–30 of 30 coasts; up to +39.5 min) — subject to the floating-ship <code>t = 0</code>, instantaneous-rupture, heave-free 5 cm/min GPS caveat stated above.</p>
+  <p>Warning-time gains use <code>first_gauge_s</code>, <code>nearest_gauge_s</code>, and <code>first_instrument_s</code> directly from the T17 sweep parquet (all computed on the <code>η(t) − η(0)</code> gauge trigger). Across Map 2 events, median first-gauge trigger time is <strong>8–21 min</strong> (Cyprus 8 min, Calabrian 10 min, Hellenic 13 min, Aegean 21 min). Existing <strong>AIS sideways drift does not beat tide gauges</strong> in median time: calm AIS median confirmation is <strong>41–85 min</strong> (40 km) / <strong>39–82 min</strong> (100 km), lagging coastal gauges by <strong>−41 to −47 min</strong> across coasts (only 0.1–12.9% of detections precede the first gauge; highest in the Aegean at 12–13% <em>for earthquakes shaped like the catalogue</em>, with Piraeus near parity at +1.0 min vs nearest gauge in calm 100 km). By contrast, <strong>Ship GPS height</strong> confirms <strong>+5.2 to +8.5 min</strong> earlier than gauges across coasts (faster at 29–30 of 30 coasts; up to +39.5 min) — subject to the floating-ship <code>t = 0</code>, instantaneous-rupture, heave-free 5 cm/min GPS caveat stated above.</p>
   {map3_summary_html}
   {_figure_html(out_dir / "map3.png", "Map 3 (T18 — AIS drift, calm weather): Median warning time added by the AIS ship network by coast at 40 km and 100 km range caps against (1) coast's nearest gauge, (2) first gauge anywhere, and (3) first instrument including the two 2025 Ionian buoys (diamonds), on the η(t)−η(0) gauge trigger. Red/negative = gauges confirm earlier.", out_dir, embed, "<code>outputs/map3.png</code> pending T17 sweep parquet -> T18.")}
   {_figure_html(out_dir / "map3_gps.png", "Map 3 (T18 — Ship GPS height upgrade*): Median warning time added by Ship GPS height by coast at 40 km and 100 km against the same three η(t)−η(0) benchmarks. *GPS caveat: speed comes from floating ships directly above the source rising at t=0 under instantaneous rupture, 5 cm/min heave-free noise, and ships inside the source footprint.", out_dir, embed, "")}
@@ -737,7 +782,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   <h3>5.5 Detector Comparison, Held-Out False-Alarm Rates &amp; Off-Grid Twin Location Accuracy</h3>
   <p>Every rate table below reports the measured <strong>held-out quiet-day false-alarm rate (FAR)</strong> next to detection rates. Key findings across detectors:</p>
   <ul>
-    <li><strong>Network matched filter vs single-ship rules:</strong> At equal (~1%) false-alarm rate, the matched-filter network dramatically outperforms calibrated single-ship detection across every arc and Aegean stratum (e.g. calm 40 km AIS: Aegean Mw 7.60 <strong>59.7% vs 13.6%</strong>, Cyprus Mw 8.35 <strong>98.2% vs 45.9%</strong>, Calabrian Mw 8.60 <strong>88.9% vs 12.7%</strong>, Hellenic Mw 8.60 <strong>78.8% vs 8.7%</strong>).</li>
+    <li><strong>Network matched filter vs single-ship rules:</strong> At equal (~1%) false-alarm rate, the matched-filter network dramatically outperforms calibrated single-ship detection across every arc and Aegean stratum (e.g. calm 40 km AIS: Aegean Mw 7.60 <strong>59.7% vs 13.6%</strong> (for earthquakes shaped like the catalogue), Cyprus Mw 8.35 <strong>98.2% vs 45.9%</strong>, Calabrian Mw 8.60 <strong>88.9% vs 12.7%</strong>, Hellenic Mw 8.60 <strong>78.8% vs 8.7%</strong>).</li>
     <li><strong>Single-ship rules give no location:</strong> <code>best_cand_id</code> is unset (<code>-1</code> / <code>NaN</code>) for both single-ship detectors (expected). Inazu's literal 3σ single-ship rule (<code>single_literal</code>) has a <strong>100.0% quiet-day false-alarm rate</strong> across all 12 strata.</li>
     <li><strong>Regime-invariant thresholds &amp; held-out FAR:</strong> Because the network score is normalised by each regime's own noise, thresholds and held-out FAR are nearly identical across calm, moderate, and rough weather — so the measured <strong>1.6%</strong> held-out FAR for AIS at 100 km (<strong>0.2%</strong> at 40 km; <strong>0.6%</strong> for GPS at 40 &amp; 100 km) is effectively <strong>one quiet-day measurement per (operator, range cap)</strong>, not three independent measurements.</li>
     <li><strong>Planted off-grid twins of Mw &ge; 8 (calm, 40 km):</strong> Found on <strong>37%</strong> of trials by AIS drift and <strong>100%</strong> by precise GPS (assuming instantaneous rupture and 5 cm GPS noise with no weather effect); typical AIS location error is <strong>15 km</strong> and magnitude error <strong>0.04</strong> across detected twins.</li>
@@ -750,10 +795,23 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   <h4>Quiet-Day Calibration Thresholds &amp; Measured Held-Out False-Alarm Rates</h4>
   {thr_html}
 
-  <h3>5.6 Historic Event Replays (Samos 2020 &amp; Amorgos 1956)</h3>
-  <p>Both Samos (30 Oct 2020, Mw 7.0, USGS <code>us7000c7y0</code>; Kiratzi et al. 2022) and Amorgos (9 Jul 1956, Mw 7.7, Okal et al. 2009) are normal-fault (subsidence-first, <code>polarity = -1</code>) Aegean earthquakes. Replays are scored against both the arc-only catalogue (showing the blind spot of an arc-restricted library) and the arc+Aegean catalogue, with Samos simulated amplitudes compared to 14 IOC Aegean gauges (e.g. <code>kos1</code> +11.9 cm crest) using Green's-law shoaling. Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip) (~2.4–2.5× larger Aegean/Samos waves), so the Samos comparison is a consistency check rather than fully independent validation.</p>
+  <h3>5.6 Historic Event Replays (Samos 2020 &amp; Amorgos 1956 — T26)</h3>
+  <div class="callout">
+    <strong>Historic replays temper the sweep's Aegean numbers (<code>PLAN.md</code> limitation 8 made concrete):</strong>
+    <ul>
+      <li><strong>AIS ship drift does NOT detect Amorgos 1956 (Mw 7.7) or Samos 2020 (Mw 7.0):</strong> Detection is only <strong>1 to 4%</strong> of simulated days — the quiet-day false-alarm level — even though the sweep detects <strong>97%</strong> of Aegean Mw 7.85 truth events (<em>for earthquakes shaped like the catalogue</em>).</li>
+      <li><strong>Why:</strong> The sweep's Aegean truth events share the catalogue's geometry (strike 90°, dip 45°, same dipole shape) and sit only half a grid spacing away. Amorgos 1956 has strike 39° and dip 25° (and Samos 2020 is Mw 7.0, strike 276°). Even the template-free calibrated single-ship rule gets only <strong>8%</strong> (40 km calm) / <strong>7%</strong> (100 km calm) on Amorgos.</li>
+      <li><strong>Precise GPS on the same ships:</strong> Detects <strong>Amorgos 1956 on 100% of days at 6 to 8 min</strong> with the Aegean grid (<strong>64 to 71%</strong> at 59–62 min with arcs-only; first simulated tide gauge <strong>4.5 min</strong>). On <strong>Samos 2020</strong>, the GPS network reaches <strong>5 to 14%</strong> (arcs+Aegean) while calibrated single-ship GPS reaches <strong>24 to 32% at ~5 min</strong> (first simulated tide gauge <strong>80 min</strong>). GPS speed still assumes an <strong>instantaneous rupture</strong> and <strong>5 cm GPS noise with no weather effect</strong>.</li>
+    </ul>
+  </div>
+  <p>Both Samos (30 Oct 2020, Mw 7.0, USGS <code>us7000c7y0</code>; Kiratzi et al. 2022) and Amorgos (9 Jul 1956, Mw 7.7, Okal et al. 2009) are normal-fault (subsidence-first, <code>polarity = -1</code>) Aegean earthquakes excluded from the Aegean candidate grid (30 km exclusion radius) and scored against both <strong>Arcs only</strong> (blind-spot baseline) and <strong>Arcs + Aegean</strong> with thresholds recalibrated at 1% quiet-day FAR per catalogue. Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip), so the Samos gauge comparison is a consistency check rather than fully independent validation.</p>
+  <h4>T26 Replay Detection Rates: Arcs-Only vs. Arcs + Aegean (<code>outputs/historic_replays_summary.csv</code>)</h4>
+  {historic_replays_tbl_html}
+  <h4>Samos 2020 Gauge Amplitude Comparison</h4>
   {samos_gauges_html}
+  <details><summary><strong>Full T26 Replay Notes &amp; Tables (<code>outputs/historic_replays.md</code>)</strong></summary>
   {_read_text_pre(out_dir / "historic_replays.md", "<code>outputs/historic_replays.md</code> (T26) pending from Stream B.")}
+  </details>
 
   <h3>5.7 Sensitivity Analysis (T20)</h3>
   {sens_html}
@@ -762,8 +820,8 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
 <section id="assumptions">
   <h2>6. Conclusions, Assumptions &amp; Limitations</h2>
   <div class="callout">
-    <strong>Bottom line (aligned with <code>docs/DEMO_SCRIPT.md</code>):</strong>
-    Ships already at sea using AIS sideways drift confirm only the largest Mediterranean tsunamis (<strong>Aegean from Mw 7.5</strong>, <strong>Cyprus from Mw 8</strong>, <strong>Hellenic and Calabrian only near Mw 8.5</strong>) and usually <strong>after</strong> coastal tide gauges (at most <strong>12%</strong> of calm 40 km detections come first; typical Hellenic Mw 8.6 confirmation is <strong>84 min</strong> vs <strong>5.5 min</strong> for the first gauge). Real Greek ship data was <strong>17–21% less noisy</strong> than our calm setting, so the drift results are cautious rather than optimistic. Fitting the same ships with <strong>precise GPS</strong> confirms tsunamis <strong>from Mw 7</strong> within minutes, <strong>before the first gauge in 72 to 92% of detections</strong> — assuming an <strong>instantaneous rupture</strong>, <strong>5 cm GPS noise with no weather effect</strong>, and floating ships inside the source footprint.
+    <strong>Bottom line (aligned with <code>docs/DEMO_SCRIPT.md</code>, tempered by T26 historic replays):</strong>
+    Ships already at sea using AIS sideways drift confirm only the largest Mediterranean tsunamis — <strong>Aegean from Mw 7.5</strong>, <strong>Cyprus from Mw 8</strong>, <strong>Hellenic and Calabrian only near Mw 8.5</strong> (<em>for earthquakes shaped like the catalogue</em>) — and usually <strong>after</strong> coastal tide gauges (at most <strong>12%</strong> of calm 40 km detections come first; typical Hellenic Mw 8.6 confirmation is <strong>84 min</strong> vs <strong>5.5 min</strong> for the first gauge). Replayed with their published fault orientations, real Aegean earthquakes (<strong>Amorgos 1956 Mw 7.7</strong> and <strong>Samos 2020 Mw 7.0</strong>) are <strong>not detected</strong> by ship drift (<strong>1–4%</strong> of days, the false-alarm level), making catalogue-geometry mismatch concrete. Real Greek ship data was <strong>17–21% less noisy</strong> than our calm setting, so the drift noise model is cautious rather than optimistic. Fitting the same ships with <strong>precise GPS</strong> confirms tsunamis <strong>from Mw 7</strong> within minutes, <strong>before the first gauge in 72 to 92% of detections</strong> (and detects Amorgos 1956 in <strong>6–8 min</strong> with the Aegean grid, though Samos 2020 on only <strong>5–14%</strong> network / <strong>~30%</strong> single-ship) — assuming an <strong>instantaneous rupture</strong>, <strong>5 cm GPS noise with no weather effect</strong>, and floating ships inside the source footprint.
   </div>
   <ol>
     <li><strong>Yaw correction assumed applied:</strong> Simulated noise levels come from Inazu et al. (2020) measured <em>after</em> yaw correction. Without it, turning-ship noise would be higher and detection harder (illustrated in T24).</li>
@@ -773,7 +831,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     <li><strong>Linear shallow-water physics:</strong> No Coriolis, dispersion, or nonlinear inundation; ship observations shallower than 50 m are masked out (42% of EMODnet merchant traffic across the area of interest).</li>
     <li><strong>Gaussian dipole sources:</strong> Sized by verified Strasser (2010) / Wells &amp; Coppersmith (1994) scaling rather than full Okada (1985) dislocations (uplift mismatch and monopole vs dipole tested in T20).</li>
     <li><strong>Synthetic traffic &amp; anchorage bias:</strong> Traffic draws sample EMODnet 2024 vessel density (which lost satellite AIS after June 2024 and includes anchored/moored ships; Piraeus shows 78% of port reports &lt; 2 kn).</li>
-    <li><strong>Catalogue coverage:</strong> Library covers the three subduction arcs and a coarse Aegean grid; earthquakes outside those zones are detected only via mismatched templates.</li>
+    <li><strong>Catalogue coverage &amp; template geometry (limitation 8 made concrete by T26):</strong> The library covers the three subduction arcs and a coarse Aegean grid (fixed strike 90°, dip 45°). Sweep truth events share that template geometry; when real Aegean faults with other orientations are replayed (Amorgos 1956: strike 39°, dip 25°; Samos 2020: Mw 7.0, strike 276°), AIS ship drift fails to detect either event (1–4% = false-alarm floor, and even template-free calibrated single-ship gets only 8% on Amorgos).</li>
     <li><strong>Diagonal inter-cell covariance:</strong> Cell weights capture within-cell shared-current variance but neglect spatial correlation between neighbouring 25 km cells.</li>
     <li><strong>Unmodelled operational factors:</strong> Captain reactions, eastern Mediterranean GNSS/AIS jamming, internal waves in straits, and submarine landslide/volcanic tsunamis (including the ancillary landslide suspected in 1956 Amorgos).</li>
     <li><strong>Confirmation only:</strong> Ships confirm large waves only; ship silence cannot cancel a seismic tsunami warning.</li>
