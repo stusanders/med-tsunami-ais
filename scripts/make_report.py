@@ -412,47 +412,157 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
         else '<div class="pending"><strong>Pending:</strong> <code>outputs/map1_table.csv</code> not found.</div>'
     )
 
-    # Thresholds / detector comparison table
+    # Thresholds & held-out quiet-day FAR table
     thr_path = out_dir / "thresholds.csv"
-    thr_html = (
-        _df_to_html(pd.read_csv(thr_path), float_fmt="{:.4g}")
-        if thr_path.exists()
-        else '<div class="pending"><strong>Pending:</strong> <code>outputs/thresholds.csv</code> (T17 sweep / quiet-day calibration).</div>'
-    )
+    if thr_path.exists():
+        tdf = pd.read_csv(thr_path)
+        tshow = pd.DataFrame(
+            {
+                "Operator": tdf["operator"].str.upper(),
+                "Range cap (km)": (tdf["range_cap_m"] / 1000.0).round(0).astype(int),
+                "Regime": tdf["regime"],
+                "Detector": tdf["detector"],
+                "Threshold": tdf["threshold"].map(lambda v: f"{v:.2f}"),
+                "Cal FAR (%)": (100.0 * tdf["far_cal"]).map(lambda v: f"{v:.1f}%"),
+                "Held-out FAR (%)": (100.0 * tdf["far_hold"]).map(lambda v: f"{v:.1f}%"),
+                "N cal / hold": [f"{int(a)} / {int(b)}" for a, b in zip(tdf["n_cal"], tdf["n_hold"])],
+            }
+        )
+        thr_html = _df_to_html(tshow)
+    else:
+        thr_html = '<div class="pending"><strong>Pending:</strong> <code>outputs/thresholds.csv</code> (T17 sweep / quiet-day calibration).</div>'
 
-    # Map 2 / Map 3 summary tables
+    # Map 2 summary table — strictly split by operator x range_cap x regime x region (never pooling AIS+GPS or Aegean+arcs)
     map2_tbl_path = out_dir / "map2_table.csv"
     if map2_tbl_path.exists():
         m2df = pd.read_csv(map2_tbl_path)
+        has_far = "far_hold" in m2df.columns
         m2_agg = (
-            m2df.groupby(["operator", "range_cap_m", "regime"], as_index=False)
+            m2df.groupby(["operator", "range_cap_m", "regime", "region"], as_index=False)
             .agg(
                 positions=("pos_id", "count"),
-                detected_90=("mw_90", lambda s: int(s.notna().sum())),
-                median_mw_90=("mw_90", "median"),
-                detected_50=("mw_50", lambda s: int(s.notna().sum())),
-                median_mw_50=("mw_50", "median"),
+                det_90=("mw_90", lambda s: int(s.notna().sum())),
+                med_mw_90=("mw_90", "median"),
+                det_50=("mw_50", lambda s: int(s.notna().sum())),
+                med_mw_50=("mw_50", "median"),
+                far_hold=("far_hold", "first") if has_far else ("pos_id", lambda s: np.nan),
             )
         )
-        map2_summary_html = _df_to_html(m2_agg, float_fmt="{:.2f}")
+        m2_show = pd.DataFrame(
+            {
+                "Operator": m2_agg["operator"].str.upper(),
+                "Cap (km)": (m2_agg["range_cap_m"] / 1000.0).round(0).astype(int),
+                "Regime": m2_agg["regime"],
+                "Region": m2_agg["region"].str.capitalize(),
+                "Held-out FAR": m2_agg["far_hold"].map(lambda v: f"{100.0*v:.1f}%" if pd.notna(v) else "—"),
+                "Pos ≥90%": [f"{int(a)}/{int(b)}" for a, b in zip(m2_agg["det_90"], m2_agg["positions"])],
+                "Med Mw (90%)": m2_agg["med_mw_90"].map(lambda v: f"{v:.2f}" if pd.notna(v) else "—"),
+                "Pos ≥50%": [f"{int(a)}/{int(b)}" for a, b in zip(m2_agg["det_50"], m2_agg["positions"])],
+                "Med Mw (50%)": m2_agg["med_mw_50"].map(lambda v: f"{v:.2f}" if pd.notna(v) else "—"),
+            }
+        )
+        map2_summary_html = _df_to_html(m2_show)
     else:
         map2_summary_html = '<div class="pending"><strong>Pending:</strong> <code>outputs/map2_table.csv</code> (T18 after T17).</div>'
 
+    # Map 3 summary table — strictly split by operator x range_cap x regime
     map3_tbl_path = out_dir / "map3_table.csv"
     if map3_tbl_path.exists():
         m3df = pd.read_csv(map3_tbl_path)
+        has_op = "operator" in m3df.columns
+        has_lt100 = "pct_within_100km" in m3df.columns
+        grp_cols = ["operator", "range_cap_m", "regime"] if has_op else ["range_cap_m", "regime"]
         m3_agg = (
-            m3df.groupby(["range_cap_m", "regime"], as_index=False)
+            m3df.groupby(grp_cols, as_index=False)
             .agg(
                 coasts=("gauge_code", "count"),
-                med_gain_nearest_min=("gain_med_min_nearest_gauge_s", "median"),
-                med_gain_first_gauge_min=("gain_med_min_first_gauge_s", "median"),
-                med_gain_first_inst_min=("gain_med_min_first_instrument_s", "median"),
+                med_gain_near=("gain_med_min_nearest_gauge_s", "median"),
+                pos_near=("gain_med_min_nearest_gauge_s", lambda s: int((s > 0).sum())),
+                med_gain_fg=("gain_med_min_first_gauge_s", "median"),
+                pos_fg=("gain_med_min_first_gauge_s", lambda s: int((s > 0).sum())),
+                med_gain_fi=("gain_med_min_first_instrument_s", "median"),
+                pos_fi=("gain_med_min_first_instrument_s", lambda s: int((s > 0).sum())),
+                med_pct_100km=("pct_within_100km", "median") if has_lt100 else ("gauge_code", lambda s: np.nan),
             )
         )
-        map3_summary_html = _df_to_html(m3_agg, float_fmt="{:+.1f}")
+        m3_show = pd.DataFrame(
+            {
+                "Operator": m3_agg["operator"].str.upper() if has_op else "AIS",
+                "Cap (km)": (m3_agg["range_cap_m"] / 1000.0).round(0).astype(int),
+                "Regime": m3_agg["regime"],
+                "Coasts": m3_agg["coasts"].astype(int),
+                "Med gain vs nearest gauge (min)": m3_agg["med_gain_near"].map(lambda v: f"{v:+.1f}" if pd.notna(v) else "—"),
+                "Coasts >0 vs nearest": [f"{int(a)}/{int(b)}" for a, b in zip(m3_agg["pos_near"], m3_agg["coasts"])],
+                "Med gain vs 1st gauge (min)": m3_agg["med_gain_fg"].map(lambda v: f"{v:+.1f}" if pd.notna(v) else "—"),
+                "Med gain vs 1st instr. (min)": m3_agg["med_gain_fi"].map(lambda v: f"{v:+.1f}" if pd.notna(v) else "—"),
+                "Med % dets ≤100 km": m3_agg["med_pct_100km"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—"),
+            }
+        )
+        map3_summary_html = _df_to_html(m3_show)
     else:
         map3_summary_html = '<div class="pending"><strong>Pending:</strong> <code>outputs/map3_table.csv</code> (T18 after T17).</div>'
+
+    # Stratified Detector Comparison table (calm 40 km & 100 km, moderate 100 km; split by operator x region x detector)
+    det_cmp_path = out_dir / "detector_comparison.csv"
+    if det_cmp_path.exists():
+        dcdf = pd.read_csv(det_cmp_path)
+        # Show calm 40 km (matching baseline review), calm 100 km, and moderate 100 km
+        dc_sel = dcdf[
+            ((dcdf["regime"] == "calm") & (dcdf["range_cap_m"].isin([40000.0, 100000.0])))
+            | ((dcdf["regime"] == "moderate") & (dcdf["range_cap_m"] == 100000.0))
+        ].copy()
+        def _fmt_pct(v):
+            return f"{100.0 * v:.1f}%" if pd.notna(v) else "—"
+        def _fmt_num(v, fmt="{:.1f}"):
+            return fmt.format(v) if pd.notna(v) else "—"
+        dc_show = pd.DataFrame(
+            {
+                "Op": dc_sel["operator"].str.upper(),
+                "Cap": (dc_sel["range_cap_m"] / 1000.0).round(0).astype(int).astype(str) + " km",
+                "Regime": dc_sel["regime"],
+                "Region": dc_sel["region"].str.capitalize(),
+                "Detector": dc_sel["detector"],
+                "Held-out FAR": dc_sel["far_hold"].map(_fmt_pct),
+                "Det Mw 7.60": dc_sel["det_rate_mw760"].map(_fmt_pct),
+                "Det Mw 7.85": dc_sel["det_rate_mw785"].map(_fmt_pct),
+                "Det Mw 8.10": dc_sel["det_rate_mw810"].map(_fmt_pct),
+                "Det Mw 8.35": dc_sel["det_rate_mw835"].map(_fmt_pct),
+                "Det Mw 8.60": dc_sel["det_rate_mw860"].map(_fmt_pct),
+                "Med conf (min)": dc_sel["med_confirm_min"].map(lambda v: _fmt_num(v, "{:.0f}")),
+                "Med 1st gauge (min)": dc_sel["med_first_gauge_min"].map(lambda v: _fmt_num(v, "{:.1f}")),
+                "% before 1st gauge": dc_sel["pct_before_first_gauge"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—"),
+                "Loc err p50 / p90 (km)": [
+                    f"{a:.0f} / {b:.0f}" if (pd.notna(a) and pd.notna(b)) else "— (no location)"
+                    for a, b in zip(dc_sel["med_loc_err_km"], dc_sel["p90_loc_err_km"])
+                ],
+                "Dets ≤100 km": dc_sel["pct_within_100km"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—"),
+            }
+        )
+        det_cmp_html = _df_to_html(dc_show)
+    else:
+        det_cmp_html = '<div class="pending"><strong>Pending:</strong> <code>outputs/detector_comparison.csv</code> (T18 after T17).</div>'
+
+    # Off-grid Twin Location Accuracy table (detections only, incl. % within 100 km and held-out FAR)
+    twin_loc_path = out_dir / "twin_location_summary.csv"
+    if twin_loc_path.exists():
+        twdf = pd.read_csv(twin_loc_path)
+        tw_show = pd.DataFrame(
+            {
+                "Operator": twdf["operator"].str.upper(),
+                "Cap (km)": (twdf["range_cap_m"] / 1000.0).round(0).astype(int),
+                "Regime": twdf["regime"],
+                "Detected (%)": (100.0 * twdf["detected_frac"]).map(lambda v: f"{v:.1f}%"),
+                "Held-out FAR (%)": (100.0 * twdf["far_hold"]).map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—"),
+                "Loc err p50 (km)": twdf["median_loc_err_km"].map(lambda v: f"{v:.1f}"),
+                "Loc err p90 (km)": twdf["p90_loc_err_km"].map(lambda v: f"{v:.0f}"),
+                "Dets ≤100 km (%)": twdf["pct_within_100km"].map(lambda v: f"{v:.1f}%"),
+                "Med |Mw err|": twdf["median_abs_mw_err"].map(lambda v: f"{v:.2f}"),
+                "Med conf (min)": twdf["median_confirm_min"].map(lambda v: f"{v:.0f}"),
+            }
+        )
+        twin_loc_html = _df_to_html(tw_show)
+    else:
+        twin_loc_html = '<div class="pending"><strong>Pending:</strong> <code>outputs/twin_location_summary.csv</code> (T18 after T17).</div>'
 
     # Sensitivity artifacts (globbed flexibly so any T20 naming is included)
     sens_mds = sorted(out_dir.glob("*sensitivity*.md"))
@@ -578,16 +688,38 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   {_figure_html(out_dir / "tsunami_animation_frames.png", "T22 (stretch): 4-frame storyboard of a Hellenic Arc Mw 8.0 tsunami crossing the eastern Mediterranean with underway AIS ships lighting up by sideways-drift SNR (full video: outputs/tsunami_animation.mp4).", out_dir, embed)}
 
   <h3>5.3 Map 2: Detection Floor by Source Location, Operator &amp; Weather Regime</h3>
+  <div class="callout">
+    <strong>Core T17/T18 finding (strictly split by operator and region — never pooled):</strong>
+    <ul>
+      <li><strong>AIS sideways drift (existing ships, calm, 40 km / 100 km):</strong> Useful only for large tsunamis, with strong regional contrast. At 40 km calm: Aegean <strong>60%</strong> at Mw 7.60 (cand 7.5+0.1) and <strong>97%</strong> at Mw 7.85 (Aegean tested up to Mw 7.85); Cyprus <strong>49%</strong> at Mw 8.10 and <strong>98%</strong> at Mw 8.35; Calabrian <strong>34%</strong> at Mw 8.35 and <strong>89%</strong> at Mw 8.60; Hellenic <strong>16%</strong> at Mw 8.35 and <strong>79%</strong> at Mw 8.60. Extending to 100 km lifts arc detection modestly (e.g. Hellenic 24% / 83% at Mw 8.35 / 8.60), while moderate and rough weather cut deep-arc AIS detection sharply (Hellenic Mw 8.60 drops from 83% calm to 47% moderate and 15% rough). At small magnitudes, the ~1–4% AIS detection rate equals the quiet-day false-alarm floor.</li>
+      <li><strong>Ship GPS height (upgrade scenario):</strong> Reaches ~<strong>100%</strong> confirmation from Mw 7.10 everywhere (and 100% of Aegean events at every magnitude down to Mw 6.60), with median confirmation <strong>1–9 min</strong> (40 km) / <strong>1–4 min</strong> (100 km) and <strong>72–92%</strong> of detections arriving before the first coastal tide gauge.</li>
+      <li><strong>Mandatory GPS caveats:</strong> Ship GPS speed comes from floating ships directly above the source rising with the sea surface at <code>t = 0</code> (ships float, unlike land-mounted gauges). That assumes an instantaneous rupture, 5 cm/min GPS height noise with no heave or weather effect (<code>config.yaml</code> <code>gps</code>), and ships inside the source footprint.</li>
+    </ul>
+  </div>
   {map2_summary_html}
-  {_figure_html(out_dir / "map2.png", "Map 2 (T18): Smallest magnitude confirmed within 2 h in ≥90% of traffic × noise draws (with 50% rings), comparing AIS drift and ship GPS height across calm, moderate, and rough regimes.", out_dir, embed, "<code>outputs/map2.png</code> pending T17 sweep parquet -> T18.")}
-  {_figure_html(out_dir / "map2_uncertainty.png", "Detection probability vs. magnitude with 95% binomial uncertainty bands across draws, comparing the matched-filter network against the calibrated single-ship baseline.", out_dir, embed, "<code>outputs/map2_uncertainty.png</code> pending T17 sweep parquet -> T18.")}
+  {_figure_html(out_dir / "map2.png", "Map 2 (T18, 100 km range cap): Smallest off-grid truth magnitude confirmed within 2 h in ≥90% of draws (filled circles) or ≥50% (rings), split by operator (AIS drift vs Ship GPS height*) and weather regime. *GPS speed reflects floating ships above the source rising at t=0 under instantaneous rupture and 5 cm/min heave-free noise.", out_dir, embed, "<code>outputs/map2.png</code> pending T17 sweep parquet -> T18.")}
+  {_figure_html(out_dir / "map2_40km.png", "Map 2 (T18, 40 km range cap): Same 90% / 50% detection floor at the 40 km coastal AIS range cap. *GPS caveat as above.", out_dir, embed, "")}
+  {_figure_html(out_dir / "map2_uncertainty.png", "Detection probability vs. truth magnitude strictly split by operator (rows: AIS drift, Ship GPS height*) and source region (columns: Hellenic, Calabrian, Cyprus, Aegean; Aegean stops at Mw 7.85) at 100 km range cap, with 95% binomial CI bands, calibrated single-ship baseline, and the measured held-out quiet-day false-alarm floor (dash-dot red). *GPS caveat as above.", out_dir, embed, "<code>outputs/map2_uncertainty.png</code> pending T17 sweep parquet -> T18.")}
 
   <h3>5.4 Map 3: Warning Time Added Over Tide Gauges &amp; 2025 Ionian Buoys</h3>
+  <p>Warning-time gains use <code>first_gauge_s</code>, <code>nearest_gauge_s</code>, and <code>first_instrument_s</code> directly from the T17 sweep parquet (all computed on the <code>η(t) − η(0)</code> gauge trigger). Across Map 2 events, median first-gauge trigger time is <strong>8–21 min</strong> (Cyprus 8 min, Calabrian 10 min, Hellenic 13 min, Aegean 21 min). Existing <strong>AIS sideways drift does not beat tide gauges</strong> in median time: calm AIS median confirmation is <strong>41–85 min</strong> (40 km) / <strong>39–82 min</strong> (100 km), lagging coastal gauges by <strong>−41 to −47 min</strong> across coasts (only 0.1–12.9% of detections precede the first gauge; highest in the Aegean at 12–13%, with Piraeus near parity at +1.0 min vs nearest gauge in calm 100 km). By contrast, <strong>Ship GPS height</strong> confirms <strong>+5.2 to +8.5 min</strong> earlier than gauges across coasts (faster at 29–30 of 30 coasts; up to +39.5 min) — subject to the floating-ship <code>t = 0</code>, instantaneous-rupture, heave-free 5 cm/min GPS caveat stated above.</p>
   {map3_summary_html}
-  {_figure_html(out_dir / "map3.png", "Map 3 (T18): Median warning time added by the AIS ship network by coast at 40 km and 100 km range caps against (1) coast's nearest gauge, (2) first gauge anywhere, and (3) first instrument including the two Ionian buoys.", out_dir, embed, "<code>outputs/map3.png</code> pending T17 sweep parquet -> T18.")}
+  {_figure_html(out_dir / "map3.png", "Map 3 (T18 — AIS drift, calm weather): Median warning time added by the AIS ship network by coast at 40 km and 100 km range caps against (1) coast's nearest gauge, (2) first gauge anywhere, and (3) first instrument including the two 2025 Ionian buoys (diamonds), on the η(t)−η(0) gauge trigger. Red/negative = gauges confirm earlier.", out_dir, embed, "<code>outputs/map3.png</code> pending T17 sweep parquet -> T18.")}
+  {_figure_html(out_dir / "map3_gps.png", "Map 3 (T18 — Ship GPS height upgrade*): Median warning time added by Ship GPS height by coast at 40 km and 100 km against the same three η(t)−η(0) benchmarks. *GPS caveat: speed comes from floating ships directly above the source rising at t=0 under instantaneous rupture, 5 cm/min heave-free noise, and ships inside the source footprint.", out_dir, embed, "")}
 
-  <h3>5.5 Detector Comparison &amp; Held-Out False-Alarm Rates</h3>
-  <p>Calibrated thresholds and held-out quiet-day false-alarm rates per stratum (comparing the matched-filter network against Inazu's literal 3σ single-ship rule — which triggers on nearly 100% of quiet 2-hour windows across ~1,000 ships — and the 1%-FAR calibrated single-ship rule):</p>
+  <h3>5.5 Detector Comparison, Held-Out False-Alarm Rates &amp; Off-Grid Twin Location Accuracy</h3>
+  <p>Every rate table below reports the measured <strong>held-out quiet-day false-alarm rate (FAR)</strong> next to detection rates. Key findings across detectors:</p>
+  <ul>
+    <li><strong>Network matched filter vs single-ship rules:</strong> At equal (~1%) false-alarm rate, the matched-filter network dramatically outperforms calibrated single-ship detection across every arc and Aegean stratum (e.g. calm 40 km AIS: Aegean Mw 7.60 <strong>59.7% vs 13.6%</strong>, Cyprus Mw 8.35 <strong>98.2% vs 45.9%</strong>, Calabrian Mw 8.60 <strong>88.9% vs 12.7%</strong>, Hellenic Mw 8.60 <strong>78.8% vs 8.7%</strong>).</li>
+    <li><strong>Single-ship rules give no location:</strong> <code>best_cand_id</code> is unset (<code>-1</code> / <code>NaN</code>) for both single-ship detectors (expected). Inazu's literal 3σ single-ship rule (<code>single_literal</code>) has a <strong>100.0% quiet-day false-alarm rate</strong> across all 12 strata.</li>
+    <li><strong>Regime-invariant thresholds &amp; held-out FAR:</strong> Because the network score is normalised by each regime's own noise, thresholds and held-out FAR are nearly identical across calm, moderate, and rough weather — so the measured <strong>1.6%</strong> held-out FAR for AIS at 100 km (<strong>0.2%</strong> at 40 km; <strong>0.6%</strong> for GPS at 40 &amp; 100 km) is effectively <strong>one quiet-day measurement per (operator, range cap)</strong>, not three independent measurements.</li>
+    <li><strong>Mis-located detections in moderate/rough AIS:</strong> Location errors are reported on <em>detections only</em>, alongside the share of detections within 100 km of the truth. In calm AIS, 91–97% of detections land within 100 km (off-grid twin median 15 km, p90 37 km, 93–94% ≤ 100 km). In moderate and rough AIS, low-SNR noise triggers can match distant shelf templates, pushing twin p90 error to <strong>628–697 km</strong> and cutting the share within 100 km to <strong>65.1%</strong> (moderate 100 km) and <strong>58.1%</strong> (rough 100 km).</li>
+  </ul>
+  <h4>Stratified Detector Comparison (Truth Map 2; Calm 40 km &amp; 100 km, Moderate 100 km)</h4>
+  {det_cmp_html}
+  <h4>Off-Grid Twin Source Recovery &amp; Location Accuracy (Detections Only, Network Detector)</h4>
+  {twin_loc_html}
+  <h4>Quiet-Day Calibration Thresholds &amp; Measured Held-Out False-Alarm Rates</h4>
   {thr_html}
 
   <h3>5.6 Historic Event Replays (Samos 2020 &amp; Amorgos 1956)</h3>
