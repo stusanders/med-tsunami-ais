@@ -141,3 +141,11 @@ gauges:
 buoys:
   threshold_m: 0.03            # PLACEHOLDER until T26a sources the Ionian buoy spec
   telemetry_delay_s: 60.0      # PLACEHOLDER until T26a
+
+calibration:                   # T05 Piraeus analysis thresholds (not physics)
+  moving_speed_kn: 1.0         # data/README.md moving-vessel definition
+  steady_speed_kn: 8.0         # PLACEHOLDER: a ship counts as steady above this speed
+  steady_max_dt_s: 30.0        # PLACEHOLDER: reports further apart than this are not used
+  steady_max_dheading_deg: 2.0 # PLACEHOLDER: heading change between reports for a steady ship
+  max_valid_speed_kn: 50.0     # data/README.md: 22 rows exceed 50 kn, max 102 (outliers)
+  heading_not_available_code: 511
