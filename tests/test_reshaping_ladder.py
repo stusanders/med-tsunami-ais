@@ -17,8 +17,12 @@ def _load_ladder_module():
 
 
 def test_load_experiment_counts_matches_real_files():
+    import copy
     mod = _load_ladder_module()
-    counts = mod.load_experiment_counts(load_config())
+    cfg = load_config()
+    counts = mod.load_experiment_counts(cfg)
+    sw_tr = int(cfg["sweep"]["n_traffic_draws"])
+    sw_nz = int(cfg["sweep"]["n_noise_draws"])
     assert counts["K"] == 1083
     assert counts["K2"] == 1455
     assert counts["n_truth_map2"] == 1083
@@ -27,9 +31,18 @@ def test_load_experiment_counts_matches_real_files():
     assert counts["n_historic"] == 2
     assert counts["n_library_build"] == 2248
     assert counts["n_strata"] == 12
-    assert counts["n_draws_per_stratum"] == 100
-    assert counts["n_trials"] == 1_395_600
-    assert counts["n_agg_calls"] == 20
+    assert counts["n_traffic_draws"] == sw_tr
+    assert counts["n_noise_per_traffic"] == sw_nz
+    assert counts["n_draws_per_stratum"] == sw_tr * sw_nz == 100
+    assert counts["n_trials"] == counts["n_truth"] * counts["n_strata"] * sw_tr * sw_nz == 1_395_600
+    assert counts["n_agg_calls"] == sw_tr * counts["n_range_caps"] * counts["n_operators"] == 20
+    # Changing scoring.n_quiet_traffic_draws must not alter sweep trial or gather counts
+    cfg2 = copy.deepcopy(cfg)
+    cfg2["scoring"]["n_quiet_traffic_draws"] = 50
+    counts2 = mod.load_experiment_counts(cfg2)
+    assert counts2["n_trials"] == counts["n_trials"]
+    assert counts2["n_agg_calls"] == counts["n_agg_calls"]
+    assert counts2["n_quiet_traffic_draws"] == 50
 
 
 def test_format_duration_human_units():

@@ -76,7 +76,7 @@ def simulate_demo_event(cfg, step_min=2, regime="calm"):
     g_table = gauges.load_gauges(grid, cfg)
     if len(g_table) > len(gb_idx):
         g_table = g_table[g_table["rtype"] == 1].reset_index(drop=True)
-    trig_s = gauges.trigger_times(gb30_0[None, :, :], g_table)[0]    # (R_gb,)
+    trig_s = gauges.trigger_times(gb30_0[None, :, :], g_table, eta0_gb=gauges.eta0_at_receivers(eta0, g_table)[None])[0]  # (R_gb,)
     trig_min = trig_s / 60.0
 
     ship_lon = pool.lon[draw.pool_idx]

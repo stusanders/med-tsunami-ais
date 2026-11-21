@@ -387,7 +387,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
         fd_src = fd.get("source", {})
         fg_s = fd.get("first_gauge_s")
         fb_s = fd.get("first_buoy_s")
-        fg_str = f"{fg_s/60.0:.1f} min" if fg_s is not None else "none"
+        fg_str = f"{fg_s:.0f} s ({fg_s/60.0:.1f} min)" if fg_s is not None else "none"
         fb_str = f"{fb_s/60.0:.0f} min" if fb_s is not None else "none"
         t13_caption = (
             f"First detection map (T13, traffic draw 0): Hellenic Arc Mw {fd_src.get('mw', 8.0):.1f} "

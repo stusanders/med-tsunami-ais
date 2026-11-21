@@ -84,12 +84,21 @@ def load_experiment_counts(cfg) -> dict:
     n_regimes = int(len(cfg["weather_regimes"]))
     n_strata = n_operators * n_range_caps * n_regimes
 
-    n_traffic = int(cfg["scoring"].get("n_quiet_traffic_draws", 5))
-    # Map 2 / twin sweep uses 5 traffic draws x 20 noise draws = 100 draws per stratum (PLAN.md)
-    n_noise_per_traffic = 20
+    n_traffic = int(cfg["sweep"]["n_traffic_draws"])
+    n_noise_per_traffic = int(cfg["sweep"]["n_noise_draws"])
     n_draws_per_stratum = n_traffic * n_noise_per_traffic
     n_trials = n_truth * n_strata * n_draws_per_stratum
     n_agg_calls = n_traffic * n_range_caps * n_operators
+
+    # Quiet-day calibration & holdout (separate small scoring-only cost)
+    n_quiet_splits = 2
+    n_quiet_traffic_draws = int(cfg["scoring"]["n_quiet_traffic_draws"])
+    n_quiet_cal = int(cfg["scoring"]["n_quiet_calibration"])
+    n_quiet_hold = int(cfg["scoring"]["n_quiet_holdout"])
+    n_quiet_noise_per_traffic = int(round(n_quiet_cal / max(n_quiet_traffic_draws, 1)))
+    n_quiet_trials_per_stratum = n_quiet_cal + n_quiet_hold
+    n_quiet_trials = n_quiet_trials_per_stratum * n_strata
+    n_quiet_extra_fleets = n_quiet_splits * n_quiet_traffic_draws
 
     return {
         "K": K,
@@ -109,6 +118,12 @@ def load_experiment_counts(cfg) -> dict:
         "n_draws_per_stratum": n_draws_per_stratum,
         "n_trials": n_trials,
         "n_agg_calls": n_agg_calls,
+        "n_quiet_splits": n_quiet_splits,
+        "n_quiet_traffic_draws": n_quiet_traffic_draws,
+        "n_quiet_noise_per_traffic": n_quiet_noise_per_traffic,
+        "n_quiet_trials_per_stratum": n_quiet_trials_per_stratum,
+        "n_quiet_trials": n_quiet_trials,
+        "n_quiet_extra_fleets": n_quiet_extra_fleets,
         "sources": {
             "candidates_csv": str(cfg["paths"]["candidates"]),
             "truth_sources_csv": f"{cfg['paths']['truth_dir']}/sources.csv",
@@ -175,7 +190,7 @@ def measure_aggregate_templates(cfg, K: int, chunk: int = 8) -> dict:
                     "full_K_s": dt_full,
                 }
 
-    n_traffic = int(cfg["scoring"].get("n_quiet_traffic_draws", 5))
+    n_traffic = int(cfg["sweep"]["n_traffic_draws"])
     sum_one_traffic = float(sum(v["full_K_s"] for v in breakdown.values()))
     total_all_calls = n_traffic * sum_one_traffic
     mean_per_call = sum_one_traffic / max(len(breakdown), 1)
@@ -555,10 +570,36 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
             "automatically upgrades Row 6 to direct measured wall-clock."
         )
 
+    # Separate small quiet-day calibration cost (scoring only, no solver runs)
+    q_trials = int(counts["n_quiet_trials"])
+    q_fleets = int(counts["n_quiet_extra_fleets"])
+    q_score_cpu_s = q_trials * t_tcpu
+    q_score_gpu_s = q_trials * t_tgpu if t_tgpu is not None else None
+    quiet_cal_cost = {
+        "n_splits": int(counts["n_quiet_splits"]),
+        "n_quiet_traffic_draws_per_split": int(counts["n_quiet_traffic_draws"]),
+        "n_quiet_noise_per_traffic": int(counts["n_quiet_noise_per_traffic"]),
+        "n_quiet_trials_per_stratum": int(counts["n_quiet_trials_per_stratum"]),
+        "n_quiet_trials_total": q_trials,
+        "n_quiet_extra_fleets": q_fleets,
+        "scoring_only_cpu_s": float(q_score_cpu_s),
+        "scoring_only_gpu_s": float(q_score_gpu_s) if q_score_gpu_s is not None else None,
+        "note": (
+            f"Quiet-day calibration + holdout ({counts['n_quiet_splits']} splits x "
+            f"{counts['n_quiet_traffic_draws']} traffic draws x {counts['n_quiet_noise_per_traffic']} noise draws "
+            f"x {counts['n_strata']} strata = {q_trials:,} scoring-only trials, no solver runs): "
+            f"{format_duration(q_score_cpu_s)} on MacBook CPU"
+            + (f" / {format_duration(q_score_gpu_s)} on Colab {gpu_name}" if q_score_gpu_s is not None else "")
+            + f", plus {q_fleets} extra quiet traffic fleets (folded into a single library read in sweep.gather_pass)."
+        ),
+    }
+    notes.append(quiet_cal_cost["note"])
+
     payload = {
         "experiment_counts": counts,
         "per_unit_timings": per_unit_timings,
         "aggregate_templates_measurement": agg_measurement,
+        "quiet_day_calibration": quiet_cal_cost,
         "actual_t14_t17_logs": actual,
         "rows": rows,
         "notes": notes,
