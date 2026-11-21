@@ -1,0 +1,10 @@
+# Shared, untracked folders (TICKETS.md rule 2). No trailing slash, so the
+# symlinks of the same name inside the worktrees are ignored too.
+/data
+/outputs
+/status
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store

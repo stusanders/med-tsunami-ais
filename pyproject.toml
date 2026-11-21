@@ -1,0 +1,23 @@
+[project]
+name = "tsunami"
+version = "0.1.0"
+description = "Ships as a tsunami network: OSSE for AIS heading-normal drift in the eastern Mediterranean"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "pandas", "pyarrow", "xarray", "h5netcdf", "rasterio", "pyshp", "pyyaml", "matplotlib"]
+
+[project.optional-dependencies]
+gpu = ["cupy-cuda12x"]
+test = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Do NOT pip install -e: the shared .venv would then import main's src/ from inside
+# the worktrees. Tests and scripts use the local src/ via pythonpath / PYTHONPATH=src.
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

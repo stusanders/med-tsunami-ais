@@ -1,0 +1,120 @@
+# config.yaml: every constant lives here. Keys carry units as a suffix
+# (_m, _s, _m_s, _deg, _kn, _min). Convert with tsunami.units helpers only.
+# "PLACEHOLDER" = a guess, not sourced; replace when a source or calibration lands.
+
+meta:
+  seed: 20261121              # base seed; derive streams as default_rng([seed, purpose, index])
+
+paths:                         # relative to the repo / worktree root
+  gebco: data/raw/gebco/GEBCO_2026_med_-6_37E_30_46N.nc
+  vessel_density: data/raw/emodnet_vessel_density/vesseldensity_all_2024_med_clip.tif
+  ioc_gauges: data/raw/ioc_tide_gauges/ioc_med_tide_gauges.csv
+  coastline: data/raw/natural_earth/ne_10m_land/ne_10m_land.shp
+  piraeus_ais: data/raw/piraeus_ais/unipi_ais_dynamic_oct2017.csv
+  historic_dir: data/raw/historic
+  grid: data/processed/grid.npz
+  receiver_pool: data/processed/receiver_pool.npz
+  candidates: data/processed/candidates.csv
+  library_dir: data/library
+  truth_dir: data/truth
+  historic_runs_dir: data/historic_runs
+  outputs: outputs
+
+physics:
+  g_m_s2: 9.81
+  earth_radius_m: 6371000.0    # mean Earth radius
+
+domain:
+  lon_min_deg: 12.0
+  lon_max_deg: 37.0
+  lat_min_deg: 30.0
+  lat_max_deg: 42.0
+  resolution_arcmin: 2.0
+  min_wet_depth_m: 10.0        # wet cells clamped to at least this depth
+  straits:                     # no ships drawn here (strong currents, internal waves)
+    messina:     {lon_deg: [15.50, 15.75], lat_deg: [37.95, 38.35]}   # PLACEHOLDER box, check on grid.png
+    dardanelles: {lon_deg: [26.15, 26.75], lat_deg: [40.00, 40.50]}   # PLACEHOLDER box
+  exclude_boxes:               # set to land (disconnected basins inside the box)
+    black_sea:   {lon_deg: [28.9, 37.0], lat_deg: [41.15, 42.0]}      # PLACEHOLDER: B to check against grid
+
+solver:
+  cfl: 0.5                     # dt = cfl * min(dx, dy) / sqrt(g * h_max), then shrunk so 30 s is a whole number of steps
+  t_end_s: 7200.0
+  sample_interval_s: 30.0
+  sponge_width_cells: 15       # PLACEHOLDER
+  sponge_max_rate_per_s: 0.01  # PLACEHOLDER: damping rate at the outer edge, tapered (quadratic) to 0 inside
+  batch_size: 64
+  dtype: float32
+
+library:
+  minute_s: 60.0
+  n_minutes: 120
+  baseline_window_min: 45      # causal trailing mean; PLAN range 30 to 60 min, mid value chosen (not sourced). Approved; NOT a sensitivity parameter (would need re-filtering the library)
+
+traffic:
+  pool_size: 20000
+  pool_max_coast_dist_m: 100000.0
+  min_ship_depth_m: 50.0
+  hours_per_month: 730.0       # 8760 / 12, converts EMODnet hours/km2/month to mean vessels present per km2
+  speed_kn: [10.0, 18.0]       # PLACEHOLDER uniform range until T05 Piraeus calibration
+  min_speed_kn: 2.0
+  range_caps_m: [40000.0, 100000.0]
+
+ais_noise:
+  report_interval_s: 10.0      # Piraeus Oct 2017 median for moving vessels (data/README.md); T05 to confirm
+  heading_resolution_deg: 1.0  # AIS integer-degree HDG (PLAN.md, Inazu 2020)
+  heading_wobble_sd_deg: 1.0   # PLAN range 0.5 to 1.5 deg (Inazu 2020); mid value chosen
+  wobble_corr_time_s: 0.0      # PLACEHOLDER: 0 = independent per report
+  shared_sd_m_s: 0.10          # PLACEHOLDER: PLAN range 0.05 to 0.15
+  shared_corr_length_m: 35000.0  # PLACEHOLDER: PLAN range 20 to 50 km
+  shared_corr_time_s: 1800.0   # PLACEHOLDER: "varying slowly in time"
+
+gps:
+  noise_sd_m: 0.05             # Foster and Thomas 2024 (per PLAN.md)
+  threshold_m: 0.08            # Foster and Thomas 2024 range 0.06 to 0.10 (per PLAN.md); mid value
+  shared_sd_m: 0.0             # PLACEHOLDER: no shared GPS height error modelled
+
+weather_regimes:               # PLACEHOLDER multipliers on wobble and shared noise (no published calibration)
+  calm: 1.0
+  moderate: 1.5
+  rough: 2.0
+
+operators: [ais, gps]
+
+scoring:
+  cell_m: 25000.0
+  cell_ref_lat_deg: 36.0       # latitude of the equirectangular projection for cells
+  normal_bin_deg: 45.0         # crossing-lane split inside a cell
+  eps: 1.0e-6                  # dimensionless (gg is dimensionless); avoids 0/0 before arrival
+  false_alarm_rate: 0.01       # per 2-hour window
+  n_quiet_calibration: 500     # per stratum, minimum
+  n_quiet_holdout: 500         # per stratum, minimum
+  n_quiet_traffic_draws: 5     # traffic draws per split per stratum; noise draws fill the rest
+  top_n: 3
+
+single_ship:
+  literal_k_sigma: 3.0         # Inazu et al. literal three-sigma rule
+
+sources:
+  mw_min: 6.5
+  mw_max: 8.5
+  mw_step: 0.25
+  aegean_mw_max: 7.75         # human decision 2026-11-21: Aegean crustal candidates 6.5 to 7.75 (6 bins), keeps library ~25 GB
+  arc_spacing_m: 25000.0
+  aegean_spacing_m: 50000.0
+  aegean_exclusion_radius_m: 30000.0   # PLACEHOLDER: keep grid nodes this far from Samos and Amorgos epicentres
+  kind: dipole                 # dipole | monopole (T20)
+  scaling_relation: "Strasser et al. 2010, subduction interface"  # C to confirm coefficients with citation
+  arc_geometry: data/raw/neamthm18/efsm20_meshes/efsm20_si_meshes.geojson  # EFSM20 subduction meshes (Basili et al. 2024, doi:10.13127/efsm20/meshes); idfs GRSS001 Hellenic, ITSS001 Calabrian, CYSS001 Cyprus
+  rigidity_pa: 3.0e10          # PLACEHOLDER: conventional crustal value
+  uplift_fraction_of_slip: 0.3 # PLACEHOLDER
+  subsidence_ratio: 0.3        # PLACEHOLDER: subsidence peak / uplift peak
+  landward_offset_widths: 1.0  # PLACEHOLDER: subsidence lobe centre, in rupture widths down-dip of uplift centre
+
+gauges:
+  threshold_m: 0.05            # PLACEHOLDER within PLAN range 0.05 to 0.10
+  telemetry_delay_s: 180.0     # PLACEHOLDER within PLAN range 120 to 300
+
+buoys:
+  threshold_m: 0.03            # PLACEHOLDER until T26a sources the Ionian buoy spec
+  telemetry_delay_s: 60.0      # PLACEHOLDER until T26a
