@@ -111,7 +111,7 @@ scoring:
   false_alarm_rate: 0.01       # per 2-hour window
   n_quiet_calibration: 500     # per stratum, minimum
   n_quiet_holdout: 500         # per stratum, minimum
-  n_quiet_traffic_draws: 5     # traffic draws per split per stratum; noise draws fill the rest
+  n_quiet_traffic_draws: 20    # traffic draws per split per stratum; noise draws fill the rest (25 each). Was 5: with 5 the held-out false-alarm rate of the 100 km AIS network was 3% (the null window maximum varies a lot between traffic draws), so thresholds need many traffic draws
   top_n: 3
 
 single_ship:
@@ -200,3 +200,32 @@ truth:                         # T16 truth events (never identical to library en
   aegean_truth_polarity: -1    # PLACEHOLDER: Aegean truth events are normal faults (subsidence-first) so the flipped templates are exercised; -1 or +1
   min_separation_m: 1000.0     # a truth source must be at least this far from every library source at the same magnitude, or differ in strike
   mw_tolerance: 1.0e-6         # magnitudes closer than this count as equal
+
+sweep:                         # T17
+  n_traffic_draws: 5           # PLAN: at least 5 (PURPOSE 1 draws 0..n-1)
+  n_noise_draws: 20            # PLAN: at least 20 per traffic draw, regime, cap and operator
+  event_batch: 32              # truth events per GPU batch (x n_noise_draws trials)
+  cache_dir: data/sweep_cache  # aggregated templates and signals (regenerable, stays on the runtime)
+  out_dir: outputs/sweep
+  gather_chunk: 32             # library runs read per step (host memory: 32 x 29 MB)
+
+replay:                        # T26 historic replays
+  gauge_depth_m: 3.0           # PLACEHOLDER: depth at the real tide gauge used in the Green's-law correction (h_grid / h_gauge)^(1/4); harbour gauges are a few metres deep
+  gauge_depth_range_m: [2.0, 6.0]   # PLACEHOLDER range reported alongside, so the result does not hinge on one guess
+  exclude_stations: [aigi, itea, pano, maer, bodri]   # Gulf of Corinth (aigi, itea, pano: closed to the Aegean at this resolution), Marmara (maer), partial series (bodri)
+  max_comparable_snap_km: 5.0  # PLACEHOLDER: a station snapped further than this onto the open coast is not comparable at 2 arc-min (Marmaris: enclosed bay)
+  agreement_factor: 2.0        # PLAN.md: accept simulated within a factor of 2 of recorded
+  summary_csv: data/raw/historic/ioc_samos_2020/summary_samos_2020_ioc.csv
+
+sensitivity:                   # T20 (one stratum, a few traffic draws; the sweep covers range cap and weather)
+  operator: ais
+  range_cap_m: 100000.0
+  regime: moderate
+  n_traffic: 2                 # traffic draws used (the first n of the sweep's)
+  corr_lengths_m: [20000.0, 50000.0]   # shared-noise correlation length (baseline in ais_noise.shared_corr_length_m)
+  response: 0.5                # ships feel only this fraction of the water current
+  uplift_scales: [0.5, 2.0]    # truth amplitude x this (uplift fraction x this), library fixed: source-size mismatch
+  gap_frac: 0.1                # fraction of ship reports dropped at random
+  off_radius_m: 100000.0       # PLACEHOLDER: ships within this distance of the epicentre are silent (receivers near the source off)
+  n_info_per_region: 2         # informative events per region for the monopole and near-source-off variants (closest to 50% detection)
+  quiet_cal_draws: 2           # quiet traffic draws (of the calibration split) used to recalibrate thresholds in the gap variant
