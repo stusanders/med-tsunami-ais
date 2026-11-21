@@ -219,6 +219,8 @@ def _benchmark_tables_html(out_dir: Path) -> str:
         solver_rows.append(
             {
                 "Tier": r["name"],
+                "Machine": r.get("machine", ""),
+                "Grid": r.get("grid_label", ""),
                 "Batch B": r.get("batch_size", ""),
                 "s / scenario": r.get("seconds_per_scenario", np.nan),
                 "Cell updates / s (M)": (r.get("cell_updates_per_s") or np.nan) / 1e6,
@@ -230,13 +232,20 @@ def _benchmark_tables_html(out_dir: Path) -> str:
     for r in recs:
         if r.get("workload") != "scoring":
             continue
+        if r.get("extrapolated_from_two_point_slope"):
+            note = "Two-point slope extrapolation from K2=8"
+        elif r.get("tier") == "vec_no_prefix_cpu":
+            note = "Vectorised NumPy, loops over t (no prefix scan)"
+        else:
+            note = "Measured full catalogue (matmul + prefix scan)"
         scoring_rows.append(
             {
                 "Tier": r["name"],
+                "Machine": r.get("machine", ""),
                 "E (events)": r.get("E", ""),
                 "K / K2": f"{r.get('K', '')} / {r.get('K2', '')}",
                 "s / 100 events": r.get("seconds_per_100_events", np.nan),
-                "Note": "Two-point slope extrapolation from K2=8" if r.get("extrapolated_from_two_point_slope") else "Measured full catalogue",
+                "Note": note,
             }
         )
 
@@ -251,30 +260,68 @@ def _benchmark_tables_html(out_dir: Path) -> str:
     sc_sum = summary.get("scoring", {})
     so_sum = summary.get("solver", {})
     bullets = []
-    if sc_sum.get("algo_speedup_cpu"):
+    if so_sum.get("colab_gpu_s_per_scen") and not so_sum.get("gpu_from_flat_fallback"):
+        b_gpu = so_sum.get("colab_gpu_batch_size", "")
+        cu_m = (so_sum.get("colab_gpu_cell_updates_per_s") or 0.0) / 1e6
+        bw_str = ""
+        if so_sum.get("gpu_bandwidth_gb_s"):
+            bw_str = f", {so_sum['gpu_bandwidth_gb_s']:.1f} GB/s ({so_sum.get('gpu_bandwidth_pct_peak', 0):.1f}% of peak)"
         bullets.append(
-            f"<strong>Scoring algorithmic speedup (CPU loops → matmul + prefix scan):</strong> "
-            f"{sc_sum['algo_speedup_cpu']:,.0f}× (direct slice measured: {sc_sum.get('direct_slice_algo_speedup', 0):.0f}×)."
+            f"<strong>Solver real-grid absolute performance (390×795, R=20,063):</strong> "
+            f"Colab Tesla T4 CuPy B={b_gpu} = <strong>{so_sum['colab_gpu_s_per_scen']:.3f} s/scenario</strong> "
+            f"({cu_m:.0f}M cell-updates/s{bw_str}; 8,611 scenarios/h). "
+            f"MacBook arm64 CPU (separate machine): {so_sum.get('macbook_serial_cpu_s_per_scen', 0):.2f} s serial / "
+            f"{so_sum.get('macbook_batched_cpu_s_per_scen', 0):.2f} s B=1."
+        )
+    if so_sum.get("hw_speedup_same_machine_colab"):
+        flat_ref = so_sum.get("same_machine_flat_ref") or {}
+        if so_sum.get("same_machine_ratio_from_flat_grid") and flat_ref:
+            bullets.append(
+                f"<strong>Solver same-machine CPU-vs-GPU ratio (flat 360×750, R=20,000, <code>outputs/validation/gpu_check.json</code>):</strong> "
+                f"Colab 2-vCPU ({flat_ref.get('colab_cpu_s_per_scen', 0):.2f} s/scen) vs "
+                f"Colab T4 B={flat_ref.get('colab_gpu_batch_size', 64)} ({flat_ref.get('colab_gpu_s_per_scen', 0):.2f} s/scen) = "
+                f"<strong>{so_sum['hw_speedup_same_machine_colab']:.1f}×</strong> "
+                f"(<code>benchmark_gpu.json</code> timed T4 only on the real grid, without a real-grid Colab CPU run)."
+            )
+        else:
+            bullets.append(
+                f"<strong>Solver same-machine GPU speedup (real 390×795 grid):</strong> "
+                f"Colab CPU ({so_sum.get('colab_cpu_s_per_scen', 0):.2f} s/scen) vs "
+                f"Colab T4 ({so_sum.get('colab_gpu_s_per_scen', 0):.3f} s/scen) = "
+                f"<strong>{so_sum['hw_speedup_same_machine_colab']:.1f}×</strong>."
+            )
+    if sc_sum.get("algo_speedup_cpu_total"):
+        vec_x = sc_sum.get("vectorisation_speedup_cpu")
+        pre_x = sc_sum.get("prefix_scan_speedup_cpu")
+        split_str = (
+            f" = <strong>{vec_x:,.0f}×</strong> vectorisation (Python loops → per-minute NumPy) "
+            f"× <strong>{pre_x:.1f}×</strong> prefix scan (O(T²) → cumsum O(T))"
+            if (vec_x and pre_x)
+            else ""
+        )
+        bullets.append(
+            f"<strong>Scoring algorithmic speedup on MacBook CPU (at E=100):</strong> "
+            f"<strong>{sc_sum['algo_speedup_cpu_total']:,.0f}×</strong>{split_str} "
+            f"(direct slice measured: {sc_sum.get('direct_slice_algo_speedup', 0):.0f}×)."
         )
     if sc_sum.get("hw_speedup_gpu_over_tensor_cpu"):
         bullets.append(
-            f"<strong>Scoring hardware speedup (CPU tensor → GPU tensor):</strong> "
-            f"{sc_sum['hw_speedup_gpu_over_tensor_cpu']:.1f}× (total {sc_sum.get('total_speedup_gpu_over_loop', 0):,.0f}×)."
-        )
-    if so_sum.get("hw_speedup_gpu_over_batched_cpu"):
-        bullets.append(
-            f"<strong>Solver hardware speedup (batched CPU → batched GPU):</strong> "
-            f"{so_sum['hw_speedup_gpu_over_batched_cpu']:.1f}× "
-            f"(achieved {so_sum.get('gpu_bandwidth_gb_s', 0):.1f} GB/s, {so_sum.get('gpu_bandwidth_pct_peak', 0):.1f}% of peak)."
+            f"<strong>Scoring GPU tier (Colab Tesla T4 vs MacBook CPU, cross-machine at E=100):</strong> "
+            f"<strong>{sc_sum.get('tensor_gpu_s_per_100ev', 0):.3f} s / 100 events</strong> — "
+            f"<strong>{sc_sum['hw_speedup_gpu_over_tensor_cpu']:.1f}×</strong> faster than MacBook CPU tensor "
+            f"(<strong>{sc_sum.get('total_speedup_gpu_over_loop', 0):,.0f}×</strong> total vs Python loops; "
+            f"210 traffic×noise draws/stratum in 1 h at E=100)."
         )
     else:
         bullets.append(
-            "<strong>GPU tier status:</strong> awaiting Colab T4/L4 run of <code>scripts/06_benchmark.py --gpu</code> "
-            "(preliminary T4 smoke runs achieved 0.31–0.46 s/scenario vs 2.55–2.80 s/scenario on MacBook CPU)."
+            "<strong>GPU scoring tier status:</strong> awaiting Colab run of <code>scripts/06_benchmark.py --gpu</code> "
+            "(not yet timed in <code>gpu_check.json</code>)."
         )
     if hysea:
+        quote = hysea.get("verbatim_quote", "")
+        q_html = f' &ldquo;{html.escape(quote)}&rdquo;' if quote else f" {html.escape(hysea.get('notes', ''))}"
         bullets.append(
-            f"<strong>Published context (Tsunami-HySEA):</strong> {html.escape(hysea.get('notes', ''))} "
+            f"<strong>Published context (Tsunami-HySEA):</strong>{q_html} "
             f"<em>({html.escape(hysea.get('citation', ''))})</em>."
         )
     parts.append('<div class="callout"><ul>' + "".join(f"<li>{b}</li>" for b in bullets) + "</ul></div>")
@@ -394,12 +441,12 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     <strong>Context (not the target case):</strong> The 23 October 2026 Palermo/Trapani evacuation (Mw 5.5, lifted after ~1 h when gauges stayed flat) illustrates the cost of seismic-only alerts. A ship network targets <em>early offshore confirmation of large tsunamis</em>; ships staying quiet cannot cancel an alert for a moderate earthquake.
   </div>
   <p>Inazu et al. (2020) proved the sideways-drift mechanism on 13 ships during the 2011 Tohoku tsunami (single-ship 3σ floor 0.1–0.3 m/s), while Hossen et al. (2021) found ship velocity alone struggled to recover Cascadia tsunamis in deep water, and Foster &amp; Thomas (2024) assessed ship GNSS height in Europe. Because large tsunamis are too rare to wait for, we simulate thousands of Mediterranean scenarios to quantify detection floors, fleet-wide false-alarm rates, warning-time gains, and the value of upgrading ships to precise GNSS.</p>
-  {_figure_html(out_dir / "cleaning_steps.png", "Standalone illustration (T24) of AIS drift cleaning: raw 10-s drift with a synthetic turn artefact (rate_of_turn × 150 m), after 1-min averaging and yaw subtraction, and after causal 45-min baseline filtering. The main simulation does not model turning and assumes post-correction noise levels.", out_dir, embed)}
+  {_figure_html(out_dir / "cleaning_steps.png", "AIS drift cleaning on the showcase Hellenic Arc Mw 8.0 run (cand 186, real grid and pool): south Crete shelf ship (61 m, peak 0.47 m/s = 4.9σ) vs deep-water ship (2,766 m, peak 0.025 m/s = 0.3σ), with simulation calm noise from noise.ais_noise (config-driven), synthetic turn artefact v_yaw drawn separately in Panel 1 and shaded in Panel 2, and Panel 3 showing that the 45-min causal baseline barely distorts a wave of this period.", out_dir, embed)}
 </section>
 
 <section id="c1">
   <h2>2. Correctness, Validation &amp; Calibration (Criterion 1)</h2>
-  <p>Physics correctness is verified across seven checks on the spherical Arakawa C-grid linear shallow-water solver (<code>src/tsunami/solver.py</code>, <code>solver_reference.py</code>), including GPU-vs-CPU equivalence on a Colab Tesla T4. All constants live in <code>config.yaml</code> with guesses explicitly tagged <code>PLACEHOLDER</code>. Both magnitude scaling laws were verified directly against their primary literature tables: Strasser et al. (2010, <em>SRL</em> 81(6):941–950, Table 2 interface: <code>L: -2.477 + 0.585 Mw</code>, <code>W: -0.882 + 0.351 Mw</code>) and Wells &amp; Coppersmith (1994, <em>BSSA</em> 84(4):974–1002, Table 2A all slip types: <code>RLD: -2.44 + 0.59 Mw</code>, <code>RW: -1.01 + 0.32 Mw</code>). Published Hellenic Arc Mw 8–8.5 scenarios report seafloor uplift from ~1–2 m on low-dip megathrust interfaces up to ~9–10 m on steeper splay faults (Lorito et al. 2008; Shaw et al. 2008; Necmioğlu &amp; Özel 2014, 2015; Wirp et al. 2025/2026), bracketing our Gaussian dipole Mw 8 uplift of 0.93 m (PLACEHOLDER <code>uplift_fraction_of_slip = 0.3</code>, tested in sensitivity runs).</p>
+  <p>Physics correctness is verified across seven checks on the spherical Arakawa C-grid linear shallow-water solver (<code>src/tsunami/solver.py</code>, <code>solver_reference.py</code>), including GPU-vs-CPU equivalence on a Colab Tesla T4. All constants live in <code>config.yaml</code> with guesses explicitly tagged <code>PLACEHOLDER</code>. Both magnitude scaling laws were verified directly against their primary literature tables: Strasser et al. (2010, <em>SRL</em> 81(6):941–950, Table 2 interface: <code>L: -2.477 + 0.585 Mw</code>, <code>W: -0.882 + 0.351 Mw</code>) and Wells &amp; Coppersmith (1994, <em>BSSA</em> 84(4):974–1002, Table 2A all slip types: <code>RLD: -2.44 + 0.59 Mw</code>, <code>RW: -1.01 + 0.32 Mw</code>). Published Hellenic Arc Mw 8–8.5 scenarios report seafloor uplift from ~1–2 m on low-dip megathrust interfaces up to ~9–10 m on steeper splay faults (Lorito et al. 2008; Shaw et al. 2008; Necmioğlu &amp; Özel 2014, 2015; Wirp et al. 2025/2026), bracketing our Gaussian dipole Mw 8 peak uplift of <strong>0.81 m</strong>. Peak uplift is <code>slip × sin(mean dip)</code> for every source: subduction arcs use EFSM20 <code>dipavg</code> (Hellenic 15°, Calabrian 13°, Cyprus 32°), while Aegean and historic sources use their fault dip. Relative to the earlier fixed <code>0.3 × slip</code> rule, Aegean candidates and Samos produce waves ~2.4–2.5× larger, Cyprus ~1.8× larger, and Hellenic and Calabrian 0.86× and 0.75× their old size (uplift mismatch is still tested in T20 sensitivity runs). Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip), so the Samos comparison is a consistency check rather than fully independent validation.</p>
   <h3>Solver Validation Summary (T11)</h3>
   {_read_text_pre(out_dir / "validation.md", "<code>outputs/validation.md</code> not found.")}
   {val_figs_html}
@@ -432,10 +479,10 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
 
 <section id="c3">
   <h2>4. Meaningful Speed-Up &amp; What Speed Buys (Criterion 3)</h2>
-  <p>Workloads A (batched solver) and B (matched-filter scoring) are benchmarked separately across three tiers (naive reference → reshaped CPU → reshaped GPU) on the same NumPy/CuPy codebase.</p>
+  <p>Workloads A (batched solver) and B (matched-filter scoring) are benchmarked separately across tiers on the same NumPy/CuPy codebase, separating vectorisation gain, prefix-scan gain, and same-machine GPU hardware speedup.</p>
   {_benchmark_tables_html(out_dir)}
-  {_figure_html(out_dir / "benchmark.png", "Three-tier performance benchmark (T19) separating algorithmic reshaping from GPU hardware speedup for Solver (A) and Scoring (B).", out_dir, embed)}
-  {_figure_html(out_dir / "what_speed_buys.png", "What a fixed 1-hour compute budget buys: affordable scenario count (left) and resulting Map 2 binomial 95% confidence interval half-width at p = 0.90 (right).", out_dir, embed)}
+  {_figure_html(out_dir / "benchmark.png", "Performance benchmark (T19): Workload A solver (linear scale, machine-labelled bars, same-machine Colab CPU vs T4 speedup) and Workload B scoring at E=100 splitting vectorisation gain from prefix-scan gain.", out_dir, embed)}
+  {_figure_html(out_dir / "what_speed_buys.png", "What a fixed 1-hour compute budget buys: linear scenarios/hour including Colab T4 GPU (left) and scoring draws per truth event per stratum with exact formula once the library exists (right).", out_dir, embed)}
 </section>
 
 <section id="c4">
@@ -446,7 +493,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   {_figure_html(out_dir / "map1.png", "Map 1 (T10): Share of EMODnet 2024 vessel traffic across depth bands (<50 m masked, 50–200 m shelf, >200 m deep water) overall and within 40 km / 100 km AIS range caps.", out_dir, embed)}
 
   <h3>5.2 Single-Scenario Signal-to-Noise Check (G2)</h3>
-  {_figure_html(out_dir / "first_detection.png", "First detection map (T13): Per-ship SNR for one Hellenic Arc Mw 8 scenario alongside IOC tide gauge and 2025 Ionian buoy trigger times.", out_dir, embed, "<code>outputs/first_detection.png</code> (T13) pending from Stream B.")}
+  {_figure_html(out_dir / "first_detection.png", "First detection map (T13): Per-ship SNR for one Hellenic Arc Mw 8.0 scenario (cand 186, 0.81 m peak uplift; 0/682 ships > 1σ, max peak SNR 0.32) alongside IOC tide gauges (28/61 triggered) and 2025 Ionian buoys (1/2 triggered at 93 min).", out_dir, embed, "<code>outputs/first_detection.png</code> (T13) pending from Stream B.")}
   {_figure_html(out_dir / "tsunami_animation_frames.png", "T22 (stretch): 4-frame storyboard of a Hellenic Arc Mw 8.0 tsunami crossing the eastern Mediterranean with underway AIS ships lighting up by sideways-drift SNR (full video: outputs/tsunami_animation.mp4).", out_dir, embed)}
 
   <h3>5.3 Map 2: Detection Floor by Source Location, Operator &amp; Weather Regime</h3>
@@ -463,7 +510,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   {thr_html}
 
   <h3>5.6 Historic Event Replays (Samos 2020 &amp; Amorgos 1956)</h3>
-  <p>Both Samos (30 Oct 2020, Mw 7.0, USGS <code>us7000c7y0</code>; Kiratzi et al. 2022) and Amorgos (9 Jul 1956, Mw 7.7, Okal et al. 2009) are normal-fault (subsidence-first, <code>polarity = -1</code>) Aegean earthquakes. Replays are scored against both the arc-only catalogue (showing the blind spot of an arc-restricted library) and the arc+Aegean catalogue, with Samos simulated amplitudes compared to 14 IOC Aegean gauges (e.g. <code>kos1</code> +11.9 cm crest) using Green's-law shoaling.</p>
+  <p>Both Samos (30 Oct 2020, Mw 7.0, USGS <code>us7000c7y0</code>; Kiratzi et al. 2022) and Amorgos (9 Jul 1956, Mw 7.7, Okal et al. 2009) are normal-fault (subsidence-first, <code>polarity = -1</code>) Aegean earthquakes. Replays are scored against both the arc-only catalogue (showing the blind spot of an arc-restricted library) and the arc+Aegean catalogue, with Samos simulated amplitudes compared to 14 IOC Aegean gauges (e.g. <code>kos1</code> +11.9 cm crest) using Green's-law shoaling. Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip) (~2.4–2.5× larger Aegean/Samos waves), so the Samos comparison is a consistency check rather than fully independent validation.</p>
   {_read_text_pre(out_dir / "historic_replays.md", "<code>outputs/historic_replays.md</code> (T26) pending from Stream B.")}
 
   <h3>5.7 Sensitivity Analysis (T20)</h3>
@@ -486,6 +533,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     <li><strong>Confirmation only:</strong> Ships confirm large waves only; ship silence cannot cancel a seismic tsunami warning.</li>
     <li><strong>Padded domain &amp; closed S/E boundaries:</strong> Domain is padded 1.5° west and 1° north so absorbing sponge layers sit completely outside the 12–37°E, 30–42°N area of interest; south (30°N) and east (37°E) edges are closed walls (GEBCO subset limits).</li>
     <li><strong>Hellenic Arc geometry uncertainty:</strong> EFSM20 (<code>GRSS001</code>) and Slab2 differ by ~154 km median at 20 km depth along the Hellenic Arc, shifting candidate positions accordingly.</li>
+    <li><strong>Uplift rule (<code>slip × sin(mean dip)</code>) &amp; shallow Hellenic dip caveat:</strong> Peak uplift is <code>slip × sin(mean dip)</code> for every source (arcs: EFSM20 mean interface dip — Hellenic 15°, Calabrian 13°, Cyprus 32°; Aegean and historic: fault dip), giving 0.81 m peak uplift for Hellenic Mw 8 (~2.4–2.5× larger Aegean/Samos, ~1.8× Cyprus, 0.86× Hellenic, 0.75× Calabrian relative to fixed 0.3 × slip). Samos 2020 motivated the change from a fixed 0.3 × slip to slip × sin(dip) (Samos came out ~4× too small), so the Samos comparison is a consistency check rather than fully independent validation. Averaged only over the shallow rupture footprint, the EFSM20 Hellenic mesh dips only about 4° rather than 15°; using that would shrink Hellenic sources about 3.5×.</li>
     <li><strong>Static initial-field gauge trigger caveat (from T13):</strong> Coastal gauges sitting directly inside a source's instantaneous t=0 subsidence lobe (e.g. Paleochora for a nearby Hellenic Mw 8 event) can trigger immediately at origin time from static coseismic sea-level drop rather than wave propagation; this inflates raw gauge speed for near-field coastal stations.</li>
   </ol>
 </section>
