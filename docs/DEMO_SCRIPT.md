@@ -2,6 +2,8 @@
 
 Revised by Stream A after the T17 sweep (Sat 21 Nov, ~23:30). Values come from project outputs; the sources of each number are listed in the table at the end (not shown on screen). Values in [square brackets] are still pending (T26 replays, or a per-run value the pipeline must read from the showcase run). Nothing else should appear on screen: no file paths, candidate numbers, "dev" notes or working labels. Narration is about 2 words per second.
 
+**Historic replays (T26) temper the Aegean numbers:** the sweep's truth events share the library's source geometry. Replayed with their published geometry, Amorgos 1956 (Mw 7.7) and Samos 2020 (Mw 7.0) are NOT detected by ship drift (1 to 4% of days, the false-alarm level). Precise GPS detects Amorgos in 6 to 8 minutes (with the Aegean grid), but Samos only on 5 to 14% of days.
+
 **Two numbers may still change** depending on open decisions: the held-out false-alarm rate of the AIS network at the 100 km range cap (1.6%), and all AIS detection numbers if the optional "prewhitened" AIS scoring variant is run. The pipeline must read every value from the output files, never from this text.
 
 Total running time: about 4 minutes 50 seconds.
@@ -320,7 +322,7 @@ Total running time: about 4 minutes 50 seconds.
 **Right heading:** Minutes gained or lost against tide gauges and buoys, by coast
 
 **Key numbers (calm weather):**
-- Ship drift: Aegean from Mw 7.5, Cyprus Arc from Mw 8, Hellenic and Calabrian Arcs only near Mw 8.5
+- Ship drift: Aegean from Mw 7.5, Cyprus Arc from Mw 8, Hellenic and Calabrian Arcs only near Mw 8.5, for earthquakes shaped like the catalogue; real Aegean faults replayed (Amorgos, Samos) were not detected
 - Ship drift beats the first tide gauge in at most 12% of detections (Aegean)
 - Precise GPS: from Mw 7 everywhere, and before the first tide gauge in 72 to 92% of detections
 
@@ -340,13 +342,14 @@ Total running time: about 4 minutes 50 seconds.
 - Samos, Mw 7.0
 - Kos tide gauge: recorded and simulated
 - Largest wave at Kos: recorded 11.9 cm, simulated about 6 cm
-- Ship network: [confirmed after X minutes / not confirmed] (T26, pending)
+- Ship drift network: not confirmed (1 to 4% of simulated days, the false-alarm level)
+- Ships with precise GPS: confirmed on 5 to 14% of days
 
 **Caption:**
-> The simulated wave at Kos is about half the recorded one, within the factor of 2 we set, which provides a check against a real tsunami.
+> The simulated wave at Kos is about half the recorded one, within the factor of 2 we set. With today's ships, an earthquake of this size would not have been confirmed at sea.
 
 **Narration:**
-> "Replaying the 2020 Samos earthquake with today's ships allows the simulation to be checked against what the Kos tide gauge actually recorded."
+> "Replaying the 2020 Samos earthquake with today's ships allows the simulation to be checked against what the Kos tide gauge actually recorded. With today's ships, an earthquake of this size would not have been confirmed at sea."
 
 ---
 
@@ -358,7 +361,7 @@ Total running time: about 4 minutes 50 seconds.
 
 **Limits:**
 1. The model is accurate offshore only, so ships in water under 50 m are ignored
-2. Earthquake sources are simplified, and Samos helped set the rule for their size
+2. Earthquake sources are simplified, and Samos helped set the rule for their size; real faults with other orientations (Amorgos, Samos) were much harder to detect than the catalogue suggests
 3. The speed of precise GPS assumes the seafloor moves at once and that GPS noise stays at 5 cm in any weather
 4. Real Greek ship data was 17 to 21% less noisy than our calm setting, which suggests the drift results are, if anything, cautious
 
@@ -393,4 +396,5 @@ All citations and data sources from scripts/demo/cards.yaml and data/README.md, 
 | 12 | 3 years, 5.6 h, 1 h, 17x | outputs/reshaping_ladder.json; outputs/validation/gpu_check.json |
 | 13 | region thresholds, 12%, 72 to 92% | outputs/sweep/*.parquet, map2 events, calm, 40 km, network |
 | 14 | 11.9 cm recorded, about 6 cm simulated (ratio 0.54) | outputs/historic_samos_gauges.csv (kos1, after the Green's-law depth correction) |
+| 13, 14 | Samos and Amorgos replay detection rates | outputs/historic_replays.md (T26) |
 | 15 | 17 to 21% | outputs/noise_check_piraeus.md (real / simulated calm = 0.79 to 0.83) |
