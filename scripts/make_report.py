@@ -260,24 +260,36 @@ def _benchmark_tables_html(out_dir: Path) -> str:
     sc_sum = summary.get("scoring", {})
     so_sum = summary.get("solver", {})
     bullets = []
-    if so_sum.get("hw_speedup_same_machine_colab"):
-        grid_tag = (
-            "synthetic flat 360×750 grid, R=20,000 from <code>outputs/validation/gpu_check.json</code> "
-            "(to be replaced by Stream B's real-grid <code>--gpu</code> run)"
-            if so_sum.get("gpu_from_flat_fallback")
-            else "real 390×795 grid"
-        )
+    if so_sum.get("colab_gpu_s_per_scen") and not so_sum.get("gpu_from_flat_fallback"):
+        b_gpu = so_sum.get("colab_gpu_batch_size", "")
+        cu_m = (so_sum.get("colab_gpu_cell_updates_per_s") or 0.0) / 1e6
         bw_str = ""
         if so_sum.get("gpu_bandwidth_gb_s"):
             bw_str = f", {so_sum['gpu_bandwidth_gb_s']:.1f} GB/s ({so_sum.get('gpu_bandwidth_pct_peak', 0):.1f}% of peak)"
         bullets.append(
-            f"<strong>Solver same-machine GPU speedup ({grid_tag}):</strong> "
-            f"Colab 2-vCPU ({so_sum.get('colab_cpu_s_per_scen', 0):.2f} s/scen) vs "
-            f"Colab T4 B=64 ({so_sum.get('colab_gpu_s_per_scen', 0):.2f} s/scen) = "
-            f"<strong>{so_sum['hw_speedup_same_machine_colab']:.1f}×</strong>{bw_str}. "
-            f"(MacBook arm64 real 390×795 CPU: {so_sum.get('macbook_serial_cpu_s_per_scen', 0):.2f} s serial → "
-            f"{so_sum.get('macbook_batched_cpu_s_per_scen', 0):.2f} s batched.)"
+            f"<strong>Solver real-grid absolute performance (390×795, R=20,063):</strong> "
+            f"Colab Tesla T4 CuPy B={b_gpu} = <strong>{so_sum['colab_gpu_s_per_scen']:.3f} s/scenario</strong> "
+            f"({cu_m:.0f}M cell-updates/s{bw_str}; 8,611 scenarios/h). "
+            f"MacBook arm64 CPU (separate machine): {so_sum.get('macbook_serial_cpu_s_per_scen', 0):.2f} s serial / "
+            f"{so_sum.get('macbook_batched_cpu_s_per_scen', 0):.2f} s B=1."
         )
+    if so_sum.get("hw_speedup_same_machine_colab"):
+        flat_ref = so_sum.get("same_machine_flat_ref") or {}
+        if so_sum.get("same_machine_ratio_from_flat_grid") and flat_ref:
+            bullets.append(
+                f"<strong>Solver same-machine CPU-vs-GPU ratio (flat 360×750, R=20,000, <code>outputs/validation/gpu_check.json</code>):</strong> "
+                f"Colab 2-vCPU ({flat_ref.get('colab_cpu_s_per_scen', 0):.2f} s/scen) vs "
+                f"Colab T4 B={flat_ref.get('colab_gpu_batch_size', 64)} ({flat_ref.get('colab_gpu_s_per_scen', 0):.2f} s/scen) = "
+                f"<strong>{so_sum['hw_speedup_same_machine_colab']:.1f}×</strong> "
+                f"(<code>benchmark_gpu.json</code> timed T4 only on the real grid, without a real-grid Colab CPU run)."
+            )
+        else:
+            bullets.append(
+                f"<strong>Solver same-machine GPU speedup (real 390×795 grid):</strong> "
+                f"Colab CPU ({so_sum.get('colab_cpu_s_per_scen', 0):.2f} s/scen) vs "
+                f"Colab T4 ({so_sum.get('colab_gpu_s_per_scen', 0):.3f} s/scen) = "
+                f"<strong>{so_sum['hw_speedup_same_machine_colab']:.1f}×</strong>."
+            )
     if sc_sum.get("algo_speedup_cpu_total"):
         vec_x = sc_sum.get("vectorisation_speedup_cpu")
         pre_x = sc_sum.get("prefix_scan_speedup_cpu")
@@ -294,8 +306,11 @@ def _benchmark_tables_html(out_dir: Path) -> str:
         )
     if sc_sum.get("hw_speedup_gpu_over_tensor_cpu"):
         bullets.append(
-            f"<strong>Scoring hardware speedup (CPU tensor → GPU tensor, E=100):</strong> "
-            f"{sc_sum['hw_speedup_gpu_over_tensor_cpu']:.1f}× (total {sc_sum.get('total_speedup_gpu_over_loop', 0):,.0f}×)."
+            f"<strong>Scoring GPU tier (Colab Tesla T4 vs MacBook CPU, cross-machine at E=100):</strong> "
+            f"<strong>{sc_sum.get('tensor_gpu_s_per_100ev', 0):.3f} s / 100 events</strong> — "
+            f"<strong>{sc_sum['hw_speedup_gpu_over_tensor_cpu']:.1f}×</strong> faster than MacBook CPU tensor "
+            f"(<strong>{sc_sum.get('total_speedup_gpu_over_loop', 0):,.0f}×</strong> total vs Python loops; "
+            f"210 traffic×noise draws/stratum in 1 h at E=100)."
         )
     else:
         bullets.append(
@@ -303,8 +318,10 @@ def _benchmark_tables_html(out_dir: Path) -> str:
             "(not yet timed in <code>gpu_check.json</code>)."
         )
     if hysea:
+        quote = hysea.get("verbatim_quote", "")
+        q_html = f' &ldquo;{html.escape(quote)}&rdquo;' if quote else f" {html.escape(hysea.get('notes', ''))}"
         bullets.append(
-            f"<strong>Published context (Tsunami-HySEA):</strong> {html.escape(hysea.get('notes', ''))} "
+            f"<strong>Published context (Tsunami-HySEA):</strong>{q_html} "
             f"<em>({html.escape(hysea.get('citation', ''))})</em>."
         )
     parts.append('<div class="callout"><ul>' + "".join(f"<li>{b}</li>" for b in bullets) + "</ul></div>")
