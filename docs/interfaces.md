@@ -218,7 +218,12 @@ scoring.log_likelihood(gd2, gg2) -> L (E,K2,T) = 2 gd2 - gg2
 scoring.estimate_source(L, t (E,) minute, cand_table, parent, polarity, top_n) -> DataFrame (best + top 3)
 scoring.calibrate_threshold(stat_quiet (N,T), far) -> float      # (1 - far) quantile of max_t stat
 scoring.confirmation_minute(stat (E,T), thr) -> (E,) int, -1 if never   # confirmation time = 60 (m+1) s
-scoring.score_loop_reference(...)  # the same outputs, using explicit Python loops (equivalence test and benchmark)
+scoring.score_loop_reference(d, g, groups, sigma_i, sigma_shared, flip_allowed, eps, valid=None)
+    # the same outputs as score_tensor, using explicit Python loops (equivalence test and benchmark B)
+scoring.score_tensor(d (E,S,T), g (K,S,T), groups, sigma_i, sigma_shared, flip_allowed, eps, valid=None, xp=None)
+    -> (gd2, gg2, S, stat, parent, polarity)      # whole tensor path from per-ship arrays (benchmark B)
+scoring.project_templates(block (k,120,R|S,3), draw, operator) -> (k, S, 120)   # own-normal projection (AIS) or eta (GPS)
+scoring.Library(directory)                       # lib[ids] -> (k,120,R,3) float32 from rec_*.npy via index.csv (mmap)
 ```
 
 - **Strata** = (operator in `{ais, gps}`) x (range cap in `{40 km, 100 km}`) x (regime in `{calm, moderate, rough}`), 12 in total. Each stratum has its own threshold for each detector.
