@@ -176,3 +176,8 @@ calibration:                   # T05 Piraeus analysis thresholds (not physics)
   steady_max_dheading_deg: 2.0 # PLACEHOLDER: heading change between reports for a steady ship
   max_valid_speed_kn: 50.0     # data/README.md: 22 rows exceed 50 kn, max 102 (outliers)
   heading_not_available_code: 511
+  yaw_antenna_offset_m: 50.0   # PLACEHOLDER (T23): fleet-mean pivot-to-GNSS-antenna offset (Piraeus AIS lacks ship lengths; Inazu 2020 fits per vessel)
+  yaw_turning_rot_deg_per_min: 10.0  # PLACEHOLDER (T23): |ROT| above this counts as turning
+  yaw_steady_rot_deg_per_min: 2.0    # PLACEHOLDER (T23): |ROT| below this counts as steady
+  yaw_max_cog_hdg_deg: 45.0          # PLACEHOLDER (T23): drop reversing/sensor-fault outliers with |COG-HDG| > 45 deg
+  yaw_min_vessel_turning_pts: 100    # PLACEHOLDER (T23): min turning reports for per-vessel empirical L_fit
