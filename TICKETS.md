@@ -149,7 +149,7 @@ Then in parallel:
 
 ### T14: Overnight GPU job (start before G2)
 - **Files:** `scripts/04_build_library.py`. **Needs:** T03, T09, T16, T26a.
-- One resumable queue, batched: (1) the library (arc candidates plus the coarse Aegean grid); (2) the truth events from T16; (3) the Samos and Amorgos historic truth runs. Save receiver series block-averaged to 1 minute and baseline-filtered (plus raw eta at gauges and buoys), chunked by candidate, float32 on the runtime disk with a float16 copy downloaded in the background. Never load the whole library onto the GPU. Run log with timings (feeds T19).
+- One resumable queue, batched: (1) the library (arc candidates plus the coarse Aegean grid); (2) the truth events from T16; (3) the Samos and Amorgos historic truth runs. Save receiver series block-averaged to 1 minute and baseline-filtered (plus raw eta at gauges and buoys), chunked by candidate, float32 on the Colab runtime disk only. **The library is never downloaded to the Mac** (not even float16; disk is too tight). Scoring (T17, T26) runs on Colab against it; only results are downloaded. If the runtime is lost, rebuild the library. Never load the whole library onto the GPU. Run log with timings (feeds T19).
 - **Done when:** every chunk saved and checksummed; the log shows total GPU time.
 
 ### T17: Full sweep (GPU)

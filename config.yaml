@@ -49,6 +49,9 @@ solver:
 library:
   minute_s: 60.0
   n_minutes: 120
+  runtime_dir: /content/library   # Colab runtime disk; the library lives ONLY here (never downloaded to the Mac)
+  download_to_mac: false          # human decision 2026-11-21: disk too tight; download results only, rebuild if runtime lost
+  dev_dir: data/library_dev       # small local library (few candidates) for development and tests
   baseline_window_min: 45      # causal trailing mean; PLAN range 30 to 60 min, mid value chosen (not sourced). Approved; NOT a sensitivity parameter (would need re-filtering the library)
 
 traffic:

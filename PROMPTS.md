@@ -55,6 +55,10 @@ Code only against docs/interfaces.md. Never edit files owned by A or C; write re
 Gates: G1 Sat 22:55, G2 Sun 01:25, G3 Sun 10:30, G4 Sun 13:30, G5 Sun 15:30. Stop and report to me at each with figures.
 
 Rules: constants in config.yaml (guesses marked PLACEHOLDER); results to outputs/; tests with code; if something fails twice, stop and tell me. Default to Sonnet. Keep status/B.md updated and give me a two-line update whenever a ticket is ready or blocked.
+
+Environment: run code with `PYTHONPATH=src ../med-tsunami-ais/.venv/bin/python`; do not `pip install -e`.
+
+GPU: I have approved the A100 for the overnight GPU job (T14) and the full sweep (T17); use T4 or L4 for everything else. Record the GPU type in every run log. Start the overnight job on the Colab runtime inside tmux (or with nohup) so it survives my laptop sleeping or SSH dropping, and tell me the command to check progress in the morning. Do not download the library to the Mac; keep it on the runtime and download only results. If the runtime is lost, rebuild the library.
 ```
 
 ---
@@ -76,4 +80,8 @@ Code only against docs/interfaces.md. Never edit files owned by A or B; write re
 Gates: G1 Sat 22:55 (T07 merged), G2 Sun 01:25 (T03 merged, T26a source parameters saved), G4 Sun 13:30, G5 Sun 15:30 (report and pitch locked). Stop and report to me at each.
 
 Rules: constants in config.yaml (guesses marked PLACEHOLDER); every figure has a title, labelled axes with units, and a one-line caption; results to outputs/; tests with code; if something fails twice, stop and tell me. Keep status/C.md updated and give me a two-line update whenever a ticket is ready or blocked.
+
+Environment: run code with `PYTHONPATH=src ../med-tsunami-ais/.venv/bin/python`; do not `pip install -e`.
+
+Geometry (for T03): arc geometry is in data/raw/neamthm18/ (see data/README.md and sources.arc_geometry in config.yaml). Use the EFSM20 subduction meshes (Hellenic GRSS001, Calabrian ITSS001, Cyprus CYSS001) as the primary source: place candidates every 25 km along the shallow (trench) edge, taking strike and dip from the mesh. Make outputs/geometry_check.png plotting EFSM20 against Slab2 Hellenic and Maesano 2017 (Calabria), and report any arc where they differ by more than about 25 km. No hand tracing needed. Maesano files: MOESM3 (shallow depth, Z negative metres) and MOESM4 (0 to 100 km surface, Z negative metres) are the useful ones; MOESM2 is travel time, ignore; MOESM5 is contours with positive Depth. Convert all depths to positive metres on read.
 ```

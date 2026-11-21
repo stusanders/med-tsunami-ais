@@ -130,7 +130,7 @@ Count per area: `N_a ~ Poisson(sum of pool weight in area a)`, capped at the num
 - `gb_{chunk:04d}.npy`: float32 `(C_chunk, 240, R_gb)`, raw eta at gauges and buoys.
 - `index.csv`: one row per run, with `run_id, chunk, row, ` plus every source column from section 7.
 - `checksums.txt` (sha256 per file) and `run_log.csv` (chunk, B, wall seconds, GPU name).
-- A float16 copy uses the same names under `*_f16/`. Scoring may read either.
+- **Storage:** the library lives only on the Colab runtime disk (`library.runtime_dir` in config), float32. It is never downloaded to the Mac (no float16 copy). Library-based scoring (T17, T26) runs on Colab; only results (`outputs/...`) come back. If the runtime is lost, B rebuilds it. Local development uses a small library built on the Mac (a few candidates, coarse grid) in the same format under `data/library_dev/`.
 - Never load a whole library onto the GPU. Gather the active ships on the CPU (section 9).
 
 **Baseline filter** (`timeseries.baseline_filter`, implemented in T00): `y[m] = x[m] - mean(x[m-W .. m-1])`, with `W = library.baseline_window_min` = 45 (fixed; not varied in T20, because changing it means re-filtering the whole library). It never uses sample m or later. Before index 0 the history is zero for templates and truth runs (there is no signal before origin). For noise, the noise model generates W extra minutes of pre-origin history and passes it as `history`. The filter is linear, so `filter(truth + noise) = filter(truth) + filter(noise)`, and filtering the library once equals filtering each projected template.
@@ -263,7 +263,7 @@ bench.write_json(records, path)
 
 ## 16. Decisions (human, 2026-11-21, G0)
 
-1. Aegean candidates are limited to Mw 6.5 to 7.75 (6 bins). Arcs keep 6.5 to 8.5 (9 bins). The library stays at about 25 GB or less (laptop has about 26 GB free, so B keeps the float32 copy on the runtime and downloads float16).
+1. Aegean candidates are limited to Mw 6.5 to 7.75 (6 bins). Arcs keep 6.5 to 8.5 (9 bins). The library stays at about 25 GB or less (laptop has about 26 GB free). Update: the library is never downloaded to the Mac; it stays on the Colab runtime and only results are downloaded.
 2. Arc geometry comes from the EFSM20 subduction meshes (downloaded by the human; see data/README.md). Slab2 Hellenic and Maesano et al. 2017 (Calabrian) are kept as cross-checks.
 3. The baseline window is 45 min and fixed. The 45 degree bins decide sign alignment only; projection always uses each ship's own normal.
 4. Strait and Black Sea boxes in config are still PLACEHOLDERs for B to check on `grid.png`.
