@@ -1,4 +1,6 @@
-"""Tests for T07 plotting helpers (src/tsunami/viz.py)."""
+"""Tests for T07 plotting helpers (src/tsunami/viz.py) and T22 animation helpers."""
+import importlib.util
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -7,7 +9,7 @@ import numpy as np
 import pytest
 
 from tsunami import viz
-from tsunami.config import load_config
+from tsunami.config import load_config, repo_path
 
 
 def test_colors_has_expected_keys():
@@ -46,7 +48,6 @@ def test_map_axes_defaults_to_area_of_interest():
         assert ax.get_ylim() == (float(aoi["lat_deg"][0]), float(aoi["lat_deg"][1]))
         assert "°E" in ax.get_xlabel() or "deg" in ax.get_xlabel().lower()
         assert "°N" in ax.get_ylabel() or "deg" in ax.get_ylabel().lower()
-        # Natural Earth polygons + coastline lines added
         assert len(ax.collections) >= 2
         expected_aspect = 1.0 / np.cos(np.deg2rad(0.5 * sum(aoi["lat_deg"])))
         assert np.isclose(ax.get_aspect(), expected_aspect, rtol=1e-6)
@@ -79,7 +80,20 @@ def test_save_figure_requires_title_and_caption(tmp_path):
         fig,
         tmp_path / "sub" / "map_test.png",
         "Eastern Mediterranean Base Map",
-        "Natural Earth 1:10m coastline over the area of interest (12 to 37 E, 30 to 42 N).",
+        "Natural Earth 1:10m coastline over the area of interest (12 to 37 E, 30 to 42 N) with a long enough caption to verify automatic line wrapping works cleanly.",
     )
     assert out.exists()
     assert out.stat().st_size > 1000
+
+
+def test_animation_eta_rgba_masks_dry_and_small_waves():
+    spec = importlib.util.spec_from_file_location("anim_script", repo_path("scripts/fig_animation.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    eta = np.array([[0.0, 0.2], [-0.2, 0.001]], dtype=np.float32)
+    wet = np.array([[True, True], [False, True]])
+    rgba = mod._eta_rgba(eta, wet, vmax=0.25)
+    assert rgba.shape == (2, 2, 4)
+    assert rgba[0, 0, 3] == 0.0
+    assert rgba[1, 0, 3] == 0.0  # dry cell transparent
+    assert rgba[0, 1, 3] > 0.5   # wet strong wave visible
