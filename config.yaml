@@ -197,3 +197,23 @@ sweep:                         # T17
   cache_dir: data/sweep_cache  # aggregated templates and signals (regenerable, stays on the runtime)
   out_dir: outputs/sweep
   gather_chunk: 32             # library runs read per step (host memory: 32 x 29 MB)
+
+replay:                        # T26 historic replays
+  gauge_depth_m: 3.0           # PLACEHOLDER: depth at the real tide gauge used in the Green's-law correction (h_grid / h_gauge)^(1/4); harbour gauges are a few metres deep
+  gauge_depth_range_m: [2.0, 6.0]   # PLACEHOLDER range reported alongside, so the result does not hinge on one guess
+  exclude_stations: [aigi, itea, pano, maer, bodri]   # Gulf of Corinth (aigi, itea, pano: closed to the Aegean at this resolution), Marmara (maer), partial series (bodri)
+  agreement_factor: 2.0        # PLAN.md: accept simulated within a factor of 2 of recorded
+  summary_csv: data/raw/historic/ioc_samos_2020/summary_samos_2020_ioc.csv
+
+sensitivity:                   # T20 (one stratum, a few traffic draws; the sweep covers range cap and weather)
+  operator: ais
+  range_cap_m: 100000.0
+  regime: moderate
+  n_traffic: 2                 # traffic draws used (the first n of the sweep's)
+  corr_lengths_m: [20000.0, 50000.0]   # shared-noise correlation length (baseline in ais_noise.shared_corr_length_m)
+  response: 0.5                # ships feel only this fraction of the water current
+  uplift_scales: [0.5, 2.0]    # truth amplitude x this (uplift fraction x this), library fixed: source-size mismatch
+  gap_frac: 0.1                # fraction of ship reports dropped at random
+  off_radius_m: 100000.0       # PLACEHOLDER: ships within this distance of the epicentre are silent (receivers near the source off)
+  n_info_per_region: 2         # informative events per region for the monopole and near-source-off variants (closest to 50% detection)
+  quiet_cal_draws: 2           # quiet traffic draws (of the calibration split) used to recalibrate thresholds in the gap variant

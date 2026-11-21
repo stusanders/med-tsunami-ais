@@ -57,13 +57,14 @@ def _key(f, cap, op):
     return f"{f.purpose}_{f.idx}_{int(cap)}_{op}"
 
 
-def gather_pass(lib, ids, fleets, cfg, out_dir, tag, per_ship=False, chunk=None):
+def gather_pass(lib, ids, fleets, cfg, out_dir, tag, per_ship=False, chunk=None, valid_fn=None):
     """Aggregate library (or truth) runs for every fleet, cap and operator in ONE pass over the files.
 
     Writes out_dir/{tag}_{purpose}_{idx}_{cap}_{op}.npy with shape (len(ids), M, 120): the same operations as
     scoring.aggregate_templates (own-normal projection, sign alignment, group mean). If per_ship, also writes
     {tag}_ship_{purpose}_{idx}_{op}.npy (len(ids), S_big, 120): the projected signal at every ship of the largest fleet.
-    Finished passes leave {tag}.done and are skipped on re-run.
+    Finished passes leave {tag}.done and are skipped on re-run. valid_fn(fleet, cap, op) -> (S, T) bool masks the reports that
+    did not arrive (data-gap sensitivity); templates are then aggregated with the same mask as the observations.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +96,8 @@ def gather_pass(lib, ids, fleets, cfg, out_dir, tag, per_ship=False, chunk=None)
                 for c in caps:
                     sc = sub[:, :, f.masks[c], :]
                     g = scoring.project_templates(sc, f.draws[c], op)
-                    mm[("G", f.purpose, f.idx, c, op)][s:e] = scoring.aggregate(g, f.groups[(c, op)], None, xp=np)
+                    v = valid_fn(f, c, op) if valid_fn else None
+                    mm[("G", f.purpose, f.idx, c, op)][s:e] = scoring.aggregate(g, f.groups[(c, op)], v, xp=np)
         del block
     for m in mm.values():
         m.flush()
@@ -137,31 +139,42 @@ def top3_at(gd2, gg2, t_idx, k=3):
 
 # ------------------------------------------------------------------ quiet days
 
-def quiet_stats(lib_G_dir, tag, fleets_by_idx, quiet, pool, cfg, cand):
-    """Statistic arrays on quiet days per stratum: {(op, cap, regime): {split: (net (N,T), single (N,T), n)}}."""
+def quiet_stats(lib_G_dir, tag, fleets_by_idx, quiet, pool, cfg, cand, rows=None, strata=None, valid_fn=None, G_fn=None):
+    """Statistic arrays on quiet days per stratum: {(op, cap, regime): {split: (net (N,T), single (N,T))}}.
+
+    rows: optional positions into `cand` (and into the cached templates) for a smaller catalogue, e.g. arcs only. The
+    threshold then reflects that catalogue: fewer candidates means a lower window maximum on quiet days.
+    """
+    if rows is not None:
+        cand = cand.iloc[rows].reset_index(drop=True)
+    # strata: optional list of (operator, cap, regime) to restrict the work; valid_fn(fleet, cap, op) -> (S, T) bool report mask and
+    # G_fn(fleet, cap, op) -> templates aggregated with that mask replace the defaults (used by the data-gap sensitivity)
     sc = cfg["scoring"]
     eps = sc["eps"]
     flip = cand["flip_allowed"].values.astype(bool)
     out = {}
     caps = sorted(cfg["traffic"]["range_caps_m"])
-    for op, cap, regime in itertools.product(cfg["operators"], caps, cfg["weather_regimes"]):
+    for op, cap, regime in (strata if strata is not None else itertools.product(cfg["operators"], caps, cfg["weather_regimes"])):
         per = {"cal": ([], []), "hold": ([], [])}
-        for tseed, rows in quiet.groupby("traffic_seed"):
+        for tseed, qrows in quiet.groupby("traffic_seed"):
             f = fleets_by_idx[int(tseed)]
             d = f.draws[cap]
             groups = f.groups[(cap, op)]
             si, ss, st = sigmas(d, regime, op, cfg)
-            w = scoring.cell_weights(groups, si, ss)
-            G = np.asarray(load_G(lib_G_dir, tag, f, cap, op))
+            valid = valid_fn(f, cap, op) if valid_fn else None
+            w = scoring.cell_weights(groups, si, ss, valid)
+            G = np.asarray(G_fn(f, cap, op) if G_fn else load_G(lib_G_dir, tag, f, cap, op))
+            if rows is not None:
+                G = G[rows]
             ns = []
-            for q in rows.itertuples():
+            for q in qrows.itertuples():
                 rng = np.random.default_rng([cfg["meta"]["seed"], PURPOSE_QNOISE, int(q.noise_seed)])
                 ns.append(make_noise(pool, f, cap, op, regime, cfg, rng, 1))
             nz = np.concatenate(ns)                                                  # (n, S, 120)
-            Dn = scoring.aggregate(nz, groups, None, xp=np)
+            Dn = scoring.aggregate(nz, groups, valid, xp=np)
             _, _, stat, _, _ = network_trials(G, Dn, w, flip, eps)
-            single = single_ship_stat(backend.to_xp(nz), st)
-            split = rows["split"].iloc[0]
+            single = single_ship_stat(backend.to_xp(nz), st, valid)
+            split = qrows["split"].iloc[0]
             per[split][0].append(backend.to_numpy(stat))
             per[split][1].append(single)
         out[(op, cap, regime)] = {k: (np.concatenate(v[0]), np.concatenate(v[1])) for k, v in per.items()}
@@ -216,18 +229,18 @@ def gauge_columns(truth, trig, cfg, gtable):
 
 # ------------------------------------------------------------------ event trials
 
-def event_shard(pool, f, cap, op, regime, truth, Ds, sig_ship, G, cand, thr, gcols, cfg, combo_index):
+def event_shard(pool, f, cap, op, regime, truth, Ds, sig_ship, G, cand, thr, gcols, cfg, combo_index, valid=None):
     """All trials of one (traffic draw, cap, operator, regime): events x noise draws x 3 detectors -> DataFrame."""
     sc, sw = cfg["scoring"], cfg["sweep"]
     N, nb = sw["n_noise_draws"], sw["event_batch"]
     d = f.draws[cap]
     groups = f.groups[(cap, op)]
     si, ss, st = sigmas(d, regime, op, cfg)
-    w = scoring.cell_weights(groups, si, ss)
+    w = scoring.cell_weights(groups, si, ss, valid)
     purpose = PURPOSE_AIS if op == "ais" else PURPOSE_GPS
     rng = np.random.default_rng([cfg["meta"]["seed"], purpose, 1_000_000 + combo_index])
     nz = make_noise(pool, f, cap, op, regime, cfg, rng, N)                           # (N, S, 120)
-    Dn = scoring.aggregate(nz, groups, None, xp=np)                                  # (N, M, 120)
+    Dn = scoring.aggregate(nz, groups, valid, xp=np)                                 # (N, M, 120)
     flip = cand["flip_allowed"].values.astype(bool)
     n_ev = len(truth)
     tcap = f.masks[cap]
@@ -246,7 +259,7 @@ def event_shard(pool, f, cap, op, regime, truth, Ds, sig_ship, G, cand, thr, gco
         bp = parent[best_k2]
         sig = np.asarray(sig_ship[e])[:, tcap, :]                                    # (ne, S, 120)
         dd = backend.to_xp(sig)[:, None] + backend.to_xp(nz)[None]                  # (ne, N, S, 120)
-        sstat = single_ship_stat(dd.reshape(ne * N, dd.shape[2], dd.shape[3]), st)
+        sstat = single_ship_stat(dd.reshape(ne * N, dd.shape[2], dd.shape[3]), st, valid)
         c_lit = alarm_minute(sstat, thr["single_literal"])
         c_cal = alarm_minute(sstat, thr["single_calibrated"])
         tr = truth.iloc[e]
@@ -285,3 +298,30 @@ def twin_summary(sweep_dir):
         median_loc_err_km=x.loc[x.detected, "loc_err_m"].median() / 1000.0, p90_loc_err_km=x.loc[x.detected, "loc_err_m"].quantile(0.9) / 1000.0,
         median_abs_mw_err=x.loc[x.detected, "mw_err"].abs().median(), median_confirm_min=x.loc[x.detected, "confirm_s"].median() / 60.0)),
         include_groups=False).reset_index()
+
+
+class Scaled:
+    """Lazy k * array (rows on demand): truth signals under a source-amplitude change (the model is linear)."""
+
+    def __init__(self, arr, k):
+        self.arr, self.k = arr, np.float32(k)
+
+    def __getitem__(self, i):
+        return self.k * np.asarray(self.arr[i])
+
+    def __len__(self):
+        return len(self.arr)
+
+
+def map2_levels(df, truth, level=0.9):
+    """Map 2 definition from network rows: per source position (pos_id), the smallest truth magnitude detected in at least
+    `level` of trials. Returns a DataFrame pos_id, region, lon, lat, mw_min (NaN if never)."""
+    net = df[df.detector == "network"]
+    frac = net.groupby("run_id").detected.mean().rename("frac")
+    t = truth.set_index("run_id").join(frac)
+    rows = []
+    for pos, g in t.groupby("pos_id"):
+        ok = g[g.frac >= level]
+        rows.append(dict(pos_id=pos, region=g.region.iloc[0], lon_deg=g.lon_deg.mean(), lat_deg=g.lat_deg.mean(),
+                         mw_min=ok.mw.min() if len(ok) else np.nan))
+    return pd.DataFrame(rows)
