@@ -7,6 +7,7 @@ Contract (docs/interfaces.md section 15):
 """
 from functools import lru_cache
 from pathlib import Path
+import textwrap
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -219,7 +220,7 @@ def map_axes(
 
 
 def save_figure(fig, path, title, caption, *, dpi=150, close=True):
-    """Add required title and one-line caption, lay out cleanly, and save to `path`."""
+    """Add required title and wrapped caption, lay out cleanly, and save to `path`."""
     if not isinstance(title, str) or not title.strip():
         raise ValueError("Figure title must be a non-empty string.")
     if not isinstance(caption, str) or not caption.strip():
@@ -227,12 +228,15 @@ def save_figure(fig, path, title, caption, *, dpi=150, close=True):
 
     clean_title = title.strip()
     clean_caption = " ".join(caption.strip().splitlines())
+    wrap_chars = max(72, int(round(fig.get_figwidth() * 13.5)))
+    wrapped_caption = textwrap.fill(clean_caption, width=wrap_chars)
+    n_lines = wrapped_caption.count("\n") + 1
 
-    fig.suptitle(clean_title, fontsize=12, fontweight="bold", y=0.98)
+    fig.suptitle(clean_title, fontsize=12, fontweight="bold", y=0.985)
     fig.text(
-        0.01,
-        0.01,
-        clean_caption,
+        0.015,
+        0.012,
+        wrapped_caption,
         fontsize=8.5,
         style="italic",
         color="#333333",
@@ -240,11 +244,12 @@ def save_figure(fig, path, title, caption, *, dpi=150, close=True):
         va="bottom",
     )
 
+    bottom_pad = 0.045 + 0.026 * (n_lines - 1)
     if not fig.get_constrained_layout():
         try:
-            fig.tight_layout(rect=(0.0, 0.045, 1.0, 0.94))
+            fig.tight_layout(rect=(0.0, bottom_pad, 1.0, 0.94))
         except Exception:
-            fig.subplots_adjust(bottom=0.12, top=0.90)
+            fig.subplots_adjust(bottom=max(0.12, bottom_pad + 0.04), top=0.90)
 
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
