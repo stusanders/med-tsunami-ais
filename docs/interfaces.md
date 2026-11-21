@@ -152,12 +152,14 @@ Count per area: `N_a ~ Poisson(sum of pool weight in area a)`, capped at the num
 | `mw` | magnitude: arcs 6.5 to 8.5 (9 bins, `magnitudes(cfg)`); Aegean 6.5 to `sources.aegean_mw_max` = 7.75 (6 bins) |
 | `length_m`, `width_m`, `slip_m` | from the scaling relation in config |
 | `polarity` | +1 uplift-first (all library entries) |
+| `uplift_dip_deg` | mean dip for the uplift rule: peak uplift = slip x sin(uplift_dip_deg). Arcs: EFSM20 dipavg (Hellenic 15, Calabrian 13, Cyprus 32 deg); Aegean and historic: fault dip. The source SHAPE still uses `dip_deg` |
 | `flip_allowed` | True for `aegean` (scored as both +g and -g), False for arcs |
 
 - `sources.source_eta0(grid, row, cfg, kind=None, polarity=None) -> (ny, nx) float32`. `row` is a table row or dict with the columns above. `kind` is `dipole` or `monopole` (default from config); `polarity` is +1 or -1 (default from the row).
 - `sources.perturb(row, along_strike_m, dmw, cfg) -> dict`, a new source moved along strike with rescaled dimensions.
 - `sources.custom_source(lon_deg, lat_deg, strike_deg, dip_deg, mw, fault, cfg, length_m=None, width_m=None, slip_m=None, region='aegean', name='') -> dict`, where `fault` is `thrust` (polarity +1) or `normal` (polarity -1, subsidence-first). Used for Samos and Amorgos.
 - `sources.dipole_volume(eta0, grid) -> (uplift_m3, subsidence_m3, net_m3)`.
+- `sources.uplift_scale(row, cfg) -> float`: sin(uplift_dip_deg) / 0.3. **The T14 library, truth and historic runs were built with uplift = 0.3 x slip.** T17 and T26 multiply every receiver series of a run (rec and gb) by its factor from `data/processed/uplift_scale.csv` (cand_id), `data/truth/uplift_scale.csv` and `data/historic_runs/uplift_scale.csv` (run_id), written by `scripts/write_uplift_scales.py`. Exact, because the solver is linear.
 - Truth and historic runs use the same columns, plus `run_kind` (`truth_map2`, `truth_twin` or `historic`), `parent_cand_id` (-1 if none) and `name`.
 
 ## 8. Solver API (T02, T09, A)
