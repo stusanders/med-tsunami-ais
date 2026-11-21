@@ -153,9 +153,13 @@ def main():
            + ", ".join(f"{r.arc} vs {r.compared_with} at {r.depth_km:.0f} km" for r in flagged.itertuples()) + "**"
            if len(flagged) else f"No arc differs by more than {FLAG_KM:.0f} km (median nearest-point distance)."),
           "", "Hellenic at 10 km: Slab2 barely reaches 10 km depth along this arc (an isolated patch near 33.35 N and "
-          "the Cyprus segment), so that row is not meaningful; the 20 km row is the real comparison. There the two "
-          "models are about 150 km apart (Slab2 places the interface further seaward), far beyond 25 km. The choice "
-          "of geometry therefore moves Hellenic candidates by up to ~150 km; this is listed as a limitation.",
+          "the Cyprus segment), so that row is not meaningful; the 20 km row is the real comparison. Conventions were "
+          "checked with an overlay (outputs/slab2_overlay.png): both depth fields are positive down in km (Slab2 converted "
+          "from negative km), both deepen landward and their contours run parallel, so this is not a sign or contour bug. "
+          "At the same location Slab2 is a median 23 km deeper than EFSM20 (29 km near the trench, 19 km at 25-38 km). "
+          "On an interface dipping only ~10 deg, that depth difference moves a given depth contour ~130 km horizontally, "
+          "which is the ~150 km offset. It is a genuine difference between a seismicity-based slab-top model (Slab2) "
+          "and the EDSF-based fault model (EFSM20).",
           "", "EFSM20's Calabrian interface is built from Maesano et al. (2017) by the same group, so close agreement "
           "there is expected and is not an independent test. Slab2 is derived mainly from seismicity and is poorly "
           "constrained at shallow depth; EFSM20 follows the EDSF geometry used by the European hazard models. "
