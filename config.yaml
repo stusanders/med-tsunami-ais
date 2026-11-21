@@ -189,3 +189,11 @@ truth:                         # T16 truth events (never identical to library en
   aegean_truth_polarity: -1    # PLACEHOLDER: Aegean truth events are normal faults (subsidence-first) so the flipped templates are exercised; -1 or +1
   min_separation_m: 1000.0     # a truth source must be at least this far from every library source at the same magnitude, or differ in strike
   mw_tolerance: 1.0e-6         # magnitudes closer than this count as equal
+
+sweep:                         # T17
+  n_traffic_draws: 5           # PLAN: at least 5 (PURPOSE 1 draws 0..n-1)
+  n_noise_draws: 20            # PLAN: at least 20 per traffic draw, regime, cap and operator
+  event_batch: 32              # truth events per GPU batch (x n_noise_draws trials)
+  cache_dir: data/sweep_cache  # aggregated templates and signals (regenerable, stays on the runtime)
+  out_dir: outputs/sweep
+  gather_chunk: 32             # library runs read per step (host memory: 32 x 29 MB)
