@@ -111,7 +111,7 @@ scoring:
   false_alarm_rate: 0.01       # per 2-hour window
   n_quiet_calibration: 500     # per stratum, minimum
   n_quiet_holdout: 500         # per stratum, minimum
-  n_quiet_traffic_draws: 5     # traffic draws per split per stratum; noise draws fill the rest
+  n_quiet_traffic_draws: 20    # traffic draws per split per stratum; noise draws fill the rest (25 each). Was 5: with 5 the held-out false-alarm rate of the 100 km AIS network was 3% (the null window maximum varies a lot between traffic draws), so thresholds need many traffic draws
   top_n: 3
 
 single_ship:

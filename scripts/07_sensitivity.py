@@ -45,7 +45,8 @@ tdf = pd.read_csv(out / "thresholds.csv")
 tsel = tdf[(tdf.operator == op) & (tdf.range_cap_m == cap) & (tdf.regime == regime)].set_index("detector")["threshold"].to_dict()
 efleets = [SW.make_fleet(pool, cfg, SW.PURPOSE_TRAFFIC, i) for i in range(S["n_traffic"])]
 gtable = gauges.load_gauges(grid, cfg)
-trig, _ = SW.gauge_table(truth, cfg, tlib_dir, gtable, scale=tscale)
+e0_gb = SW.run_eta0_at_gauges(truth, pd.read_csv(tlib_dir / "uplift_scale.csv"), grid, cfg, gtable, source_eta0)
+trig, _ = SW.gauge_table(truth, cfg, tlib_dir, gtable, scale=tscale, eta0_gb=e0_gb)
 gcols = SW.gauge_columns(truth, trig[:len(truth)], cfg, gtable)
 rows_out, log = [], lambda *a: print(*a, flush=True)
 m2 = truth[truth.run_kind == "truth_map2"].reset_index(drop=True)
@@ -107,7 +108,7 @@ def run_all(name, cfg_v, thr, scale=1.0, note=""):
 for L in S["corr_lengths_m"]:
     cv = copy.deepcopy(cfg)
     cv["ais_noise"]["shared_corr_length_m"] = L
-    qs = SW.quiet_stats(cache, "quiet", qfleets, quiet, pool, cv, cand, strata=[(op, cap, regime)])
+    qs = SW.quiet_stats(cache, SW.quiet_tag(quiet), qfleets, quiet, pool, cv, cand, strata=[(op, cap, regime)])
     _, thr_all = SW.thresholds(qs, cv)
     run_all(f"corr_length_{int(L/1000)}km", cv, thr_all[(op, cap, regime)], note="thresholds recalibrated")
 run_all("response_0.5", cfg, tsel, scale=S["response"], note="signal x response; thresholds unchanged (quiet days have no signal)")

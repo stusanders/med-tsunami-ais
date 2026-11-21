@@ -55,7 +55,7 @@ def stage_gauges():
     solver = Solver(grid, make_sampler(grid, pool), cfg)
     eta0 = np.stack([source_eta0(grid, r, cfg) for r in hist.to_dict("records")])
     rec30 = backend.to_numpy(solver.run(backend.to_xp(eta0)))                     # (B, 240, n, 3)
-    eta = rec30[..., 0]
+    eta = rec30[..., 0] - eta0[:, cj, ci][:, None, :]                              # gauges on moving land do not see the static offset
     rows = []
     sim_samos = eta[hist.index[hist["name"] == "samos_2020"][0]]
     hg_lo, hg_hi = rep["gauge_depth_range_m"]
@@ -91,18 +91,19 @@ def stage_replay():
     cache = repo_path(cfg["sweep"]["cache_dir"])
     quiet = pd.read_csv(repo_path(cfg["paths"]["truth_dir"]) / "quiet_days.csv")
     qfleets = {int(i): SW.make_fleet(pool, cfg, SW.PURPOSE_QTRAFFIC, int(i)) for i in sorted(quiet.traffic_seed.unique())}
-    SW.gather_pass(lib, cand["cand_id"].values, list(qfleets.values()), cfg, cache, "quiet")
+    SW.gather_pass(lib, cand["cand_id"].values, list(qfleets.values()), cfg, cache, SW.quiet_tag(quiet))
     efleets = [SW.make_fleet(pool, cfg, SW.PURPOSE_TRAFFIC, i) for i in range(cfg["sweep"]["n_traffic_draws"])]
     SW.gather_pass(lib, cand["cand_id"].values, efleets, cfg, cache, "lib")
     SW.gather_pass(hlib, hist["run_id"].values, efleets, cfg, cache, "hist", per_ship=True)
     gtable = gauges.load_gauges(grid, cfg)
-    trig, _ = SW.gauge_table(hist, cfg, hist_dir, gtable, scale=hscale)
+    e0_gb = SW.run_eta0_at_gauges(hist, pd.read_csv(hist_dir / "uplift_scale.csv"), grid, cfg, gtable, source_eta0)
+    trig, _ = SW.gauge_table(hist, cfg, hist_dir, gtable, scale=hscale, eta0_gb=e0_gb)
     gcols = SW.gauge_columns(hist, trig[:len(hist)], cfg, gtable)
     catalogues = {"arcs_only": np.nonzero((cand["region"] != "aegean").values)[0], "arcs_plus_aegean": np.arange(len(cand))}
     frames = []
     for name, rows in catalogues.items():
         sub = cand.iloc[rows].reset_index(drop=True)
-        tdf, thr = SW.thresholds(SW.quiet_stats(cache, "quiet", qfleets, quiet, pool, cfg, cand, rows=rows), cfg)
+        tdf, thr = SW.thresholds(SW.quiet_stats(cache, SW.quiet_tag(quiet), qfleets, quiet, pool, cfg, cand, rows=rows), cfg)
         tdf.insert(0, "catalogue", name)
         tdf.to_csv(out / f"historic_thresholds_{name}.csv", index=False)
         combos = list(itertools.product(range(len(efleets)), sorted(cfg["traffic"]["range_caps_m"]), cfg["operators"], cfg["weather_regimes"]))

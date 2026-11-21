@@ -60,9 +60,9 @@ if "quiet" in args.stages:
     quiet = pd.read_csv(truth_dir / "quiet_days.csv")
     qfleets = {int(i): SW.make_fleet(pool, cfg, SW.PURPOSE_QTRAFFIC, int(i)) for i in sorted(quiet.traffic_seed.unique())}
     log("quiet traffic draws:", {i: len(f.draw100.pool_idx) for i, f in qfleets.items()})
-    SW.gather_pass(lib, cand["cand_id"].values, list(qfleets.values()), cfg, cache, "quiet", per_ship=False)
+    SW.gather_pass(lib, cand["cand_id"].values, list(qfleets.values()), cfg, cache, SW.quiet_tag(quiet), per_ship=False)
     log("quiet library pass done")
-    qs = SW.quiet_stats(cache, "quiet", qfleets, quiet, pool, cfg, cand)
+    qs = SW.quiet_stats(cache, SW.quiet_tag(quiet), qfleets, quiet, pool, cfg, cand)
     tdf, thr = SW.thresholds(qs, cfg)
     tdf.to_csv(thr_path, index=False)
     log("thresholds written", thr_path)
@@ -87,7 +87,10 @@ if "events" in args.stages:
     log("truth pass done")
     ttag = "truth" + (f"_{args.max_events}" if args.max_events else "")
     gtable = gauges.load_gauges(grid, cfg)
-    trig, first_eta = SW.gauge_table(truth, cfg, truth_dir, gtable, scale=tscale)
+    from tsunami.sources import source_eta0 as _eta0
+    e0_gb = SW.run_eta0_at_gauges(truth, pd.read_csv(truth_dir / "uplift_scale.csv"), grid, cfg, gtable, _eta0)
+    trig, first_eta = SW.gauge_table(truth, cfg, truth_dir, gtable, scale=tscale, eta0_gb=e0_gb)
+    SW.check_eta0_consistency(first_eta[:len(truth)], e0_gb.values, log)   # first_eta is already rescaled by gauge_table
     trig, first_eta = trig[:len(truth)], first_eta[:len(truth)]
     gcols = SW.gauge_columns(truth, trig, cfg, gtable)
     gl = pd.DataFrame({"run_id": np.repeat(truth.run_id.values, len(gtable)), "code": np.tile(gtable.code.values, len(truth)),

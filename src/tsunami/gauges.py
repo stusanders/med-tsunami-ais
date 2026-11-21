@@ -84,15 +84,29 @@ def load_gauges(grid, cfg=None):
     return out
 
 
-def trigger_times(gb30, table, sample_interval_s=None):
+def trigger_times(gb30, table, eta0_gb=None, sample_interval_s=None):
     """First time each gauge or buoy raises an alarm, in seconds after origin; inf if never.
 
-    gb30 (E, 240, R_gb): raw eta at 30 s. A receiver triggers at the first sample k with |eta| > threshold_m, i.e. at
-    t = 30 (k + 1) s, and the alarm reaches the warning centre `delay_s` later.
+    gb30 (E, 240, R_gb): raw eta at 30 s. A receiver triggers at the first sample k with |eta(t) - eta(0)| > threshold_m, i.e.
+    at t = 30 (k + 1) s, and the alarm reaches the warning centre `delay_s` later.
+
+    eta0_gb (E, R_gb): the source's initial surface eta(0) at each receiver's snapped cell. A real gauge or buoy sits on the
+    seabed or on land that moves with the earthquake, so it does not see the static offset of the initial field; only the
+    wave that arrives afterwards counts. eta(0) is not in gb30 (sample k is at t = 30 (k + 1) s). None keeps the raw-eta
+    behaviour (tests only; it makes receivers inside the source area trigger at the first sample).
     """
     dt = sample_interval_s if sample_interval_s is not None else load_config()["solver"]["sample_interval_s"]
     gb30 = np.asarray(gb30)
+    if eta0_gb is not None:
+        gb30 = gb30 - np.asarray(eta0_gb, dtype=gb30.dtype)[:, None, :]
     exceed = np.abs(gb30) > table["threshold_m"].values.astype(gb30.dtype)[None, None, :]    # same dtype: no float32/64 rounding
     first = exceed.argmax(axis=1)
     t = dt * (first + 1) + table["delay_s"].values[None, :]
     return np.where(exceed.any(axis=1), t, np.inf)
+
+
+def eta0_at_receivers(eta0, table):
+    """eta(0) at the gauge and buoy cells: (ny, nx) or (E, ny, nx) -> (R_gb,) or (E, R_gb)."""
+    eta0 = np.asarray(eta0)
+    j, i = table["cell_j"].values, table["cell_i"].values
+    return eta0[..., j, i]

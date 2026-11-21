@@ -44,7 +44,8 @@ peak_snr = snr_t.max(axis=1)
 k = cfg["single_ship"]["literal_k_sigma"]
 first_min = np.where((snr_t > k).any(axis=1), (snr_t > k).argmax(axis=1), -1)
 gt = gauges.load_gauges(grid, cfg)
-trig = gauges.trigger_times(gb30, gt)[0]                                               # s, inf if never
+trig = gauges.trigger_times(gb30, gt, eta0_gb=gauges.eta0_at_receivers(eta0, gt)[None])[0]    # s, inf if never; eta(t) - eta(0)
+trig_raw = gauges.trigger_times(gb30, gt)[0]                                           # old behaviour, for the comparison only
 
 lon, lat = pool.lon[draw.pool_idx], pool.lat[draw.pool_idx]
 res = dict(source=dict(cand_id=int(row["cand_id"]), lon_deg=row["lon_deg"], lat_deg=row["lat_deg"], mw=row["mw"]),
@@ -55,6 +56,8 @@ res = dict(source=dict(cand_id=int(row["cand_id"]), lon_deg=row["lon_deg"], lat_
            n_gauges_triggered=int(np.isfinite(trig[gt.rtype == 1]).sum()), n_gauges=int((gt.rtype == 1).sum()),
            n_buoys_triggered=int(np.isfinite(trig[gt.rtype == 2]).sum()), n_buoys=int((gt.rtype == 2).sum()),
            first_gauge_s=float(trig[gt.rtype == 1].min()), first_buoy_s=float(trig[gt.rtype == 2].min()),
+           first_gauge_s_raw_eta=float(trig_raw[gt.rtype == 1].min()), n_gauges_triggered_raw_eta=int(np.isfinite(trig_raw[gt.rtype == 1]).sum()),
+           eta0_at_first_trigger_gauge_m=float(gauges.eta0_at_receivers(eta0, gt)[np.argmin(np.where(gt.rtype == 1, trig, np.inf))]),
            gauge_triggers={c_: float(t) for c_, t in zip(gt.code, trig) if np.isfinite(t)})
 (repo_path(cfg["paths"]["outputs"]) / "first_detection.json").write_text(json.dumps(res, indent=1))
 print(json.dumps({k_: v for k_, v in res.items() if k_ != "gauge_triggers"}, indent=1))

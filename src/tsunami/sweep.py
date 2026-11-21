@@ -172,6 +172,11 @@ def top3_at(gd2, gg2, t_idx, k=3):
 
 # ------------------------------------------------------------------ quiet days
 
+def quiet_tag(quiet):
+    """Cache tag that changes with the number of quiet traffic draws, so a cache built for another list is never reused."""
+    return f"quiet{quiet.traffic_seed.nunique()}"
+
+
 def quiet_stats(lib_G_dir, tag, fleets_by_idx, quiet, pool, cfg, cand, rows=None, strata=None, valid_fn=None, G_fn=None):
     """Statistic arrays on quiet days per stratum: {(op, cap, regime): {split: (net (N,T), single (N,T))}}.
 
@@ -210,7 +215,7 @@ def quiet_stats(lib_G_dir, tag, fleets_by_idx, quiet, pool, cfg, cand, rows=None
             split = qrows["split"].iloc[0]
             per[split][0].append(backend.to_numpy(stat))
             per[split][1].append(single)
-        out[(op, cap, regime)] = {k: (np.concatenate(v[0]), np.concatenate(v[1])) for k, v in per.items()}
+        out[(op, cap, regime)] = {k: (np.concatenate(v[0]), np.concatenate(v[1])) for k, v in per.items() if v[0]}
     return out
 
 
@@ -234,7 +239,21 @@ def thresholds(qs, cfg):
 
 # ------------------------------------------------------------------ gauges
 
-def gauge_table(truth, cfg, gb_lib_dir, gtable, scale=None):
+def run_eta0_at_gauges(runs, scale_df, grid, cfg, gtable, source_fn):
+    """eta(0) of every run at the gauge and buoy cells: DataFrame (index run_id, one column per receiver).
+
+    The stored runs were solved with the legacy uplift fraction and are rescaled at load time; the matching eta(0) is the current
+    rule with the run's uplift dip (from the scale file), which is the same thing by linearity.
+    """
+    dip = scale_df.set_index("run_id")["uplift_dip_deg"]
+    rows = []
+    for r in runs.to_dict("records"):
+        r["uplift_dip_deg"] = float(dip.loc[r["run_id"]])
+        rows.append(gauges.eta0_at_receivers(source_fn(grid, r, cfg), gtable))
+    return pd.DataFrame(np.stack(rows), index=runs["run_id"].values)
+
+
+def gauge_table(truth, cfg, gb_lib_dir, gtable, scale=None, eta0_gb=None):
     """Per truth event: trigger time of every gauge and buoy (s, inf if never), plus the sample-0 eta at each receiver."""
     lib_index = pd.read_csv(Path(gb_lib_dir) / "index.csv").sort_values("run_id")
     trig, first = [], []
@@ -243,7 +262,8 @@ def gauge_table(truth, cfg, gb_lib_dir, gtable, scale=None):
         part = np.asarray(gb[rows["row"].values])
         if scale is not None:                                                         # raw eta at gauges rescales like the library
             part = part * scale.loc[rows["run_id"].values].values.astype(np.float32)[:, None, None]
-        trig.append(gauges.trigger_times(part, gtable, cfg["solver"]["sample_interval_s"]))
+        e0 = None if eta0_gb is None else eta0_gb.loc[rows["run_id"].values].values.astype(np.float32)
+        trig.append(gauges.trigger_times(part, gtable, e0, cfg["solver"]["sample_interval_s"]))
         first.append(part[:, 0, :])
     return np.concatenate(trig), np.concatenate(first)
 
@@ -360,3 +380,18 @@ def map2_levels(df, truth, level=0.9):
         rows.append(dict(pos_id=pos, region=g.region.iloc[0], lon_deg=g.lon_deg.mean(), lat_deg=g.lat_deg.mean(),
                          mw_min=ok.mw.min() if len(ok) else np.nan))
     return pd.DataFrame(rows)
+
+
+def check_eta0_consistency(first_sample, eta0_gb, log=print, min_abs_m=0.2, lo=0.5, hi=1.5):
+    """Sanity check of the eta(0) bookkeeping: where the initial field is large (|eta0| > min_abs_m) the stored (rescaled) raw eta at the
+    first 30 s sample must be of the same size, because the field has barely moved yet. Raises if the median ratio is off."""
+    first_sample, eta0_gb = np.asarray(first_sample, np.float64), np.asarray(eta0_gb, np.float64)
+    m = np.abs(eta0_gb) > min_abs_m
+    if not m.any():
+        log("eta0 check: no receiver inside a source area with |eta0| >", min_abs_m)
+        return None
+    ratio = np.median(first_sample[m] / eta0_gb[m])
+    log(f"eta0 check: {int(m.sum())} receiver-runs with |eta0| > {min_abs_m} m, median(first sample / eta0) = {ratio:.3f}")
+    if not (lo < ratio < hi):
+        raise ValueError(f"stored first sample and eta0 disagree (median ratio {ratio:.3f}): check the uplift scale bookkeeping")
+    return ratio

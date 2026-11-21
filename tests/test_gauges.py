@@ -30,7 +30,7 @@ def test_trigger_first_crossing_plus_delay_and_inf():
 
 def test_trigger_threshold_is_strict():
     gb = np.full((1, 240, 1), 0.05, np.float32)
-    assert np.isinf(G.trigger_times(gb, table(1), 30.0)).all()
+    assert np.isinf(G.trigger_times(gb, table(1), sample_interval_s=30.0)).all()
 
 
 @pytest.mark.skipif(not have, reason="grid or IOC list missing")
@@ -49,3 +49,24 @@ def test_load_gauges_contract():
     assert {"kos3", "amor"} <= codes                         # Samos and Amorgos replays need these
     dropped = dict(t.attrs["dropped"])
     assert "ista" in dropped and "ista" not in codes         # Black Sea station dropped, not snapped across the land
+
+
+def test_static_offset_is_not_a_trigger_but_a_passing_wave_is():
+    gb = np.zeros((2, 240, 3), np.float32)
+    eta0 = np.array([[-0.5, 0.0, 0.2], [-0.5, 0.0, 0.2]], np.float32)       # initial field at the three receivers
+    gb[:] = eta0[:, None, :]                                               # static subsidence / uplift, no wave
+    gb[1, 9, 1] += 0.06                                                    # a real wave passes receiver 1 in event 1 at sample 9
+    t = G.trigger_times(gb, table(), eta0_gb=eta0, sample_interval_s=30.0)
+    assert np.isinf(t[0]).all()                                            # event 0: only the static offset, nothing triggers
+    assert t[1, 1] == 30 * 10 + 180.0 and np.isinf(t[1, [0, 2]]).all()     # event 1: wave triggers at the right time
+    t_old = G.trigger_times(gb, table(), sample_interval_s=30.0)           # old behaviour: static offset triggers at the first sample
+    assert t_old[0, 0] == 30.0 + 180.0 and t_old[0, 2] == 30.0 + 60.0 and np.isinf(t_old[0, 1])   # third receiver is a buoy (60 s delay)
+
+
+def test_wave_riding_on_a_static_offset_uses_the_change():
+    gb = np.full((1, 240, 1), -0.5, np.float32)
+    gb[0, 20:, 0] = -0.5 + 0.049                                           # change of 4.9 cm: below the 5 cm threshold
+    gb[0, 30:, 0] = -0.5 + 0.051                                           # change of 5.1 cm
+    t = G.trigger_times(gb, table(1), eta0_gb=np.array([[-0.5]], np.float32), sample_interval_s=30.0)
+    assert t[0, 0] == 30 * 31 + 180.0
+    assert G.eta0_at_receivers(np.arange(12.0).reshape(3, 4), __import__("pandas").DataFrame({"cell_j": [1, 2], "cell_i": [3, 0]})).tolist() == [7.0, 8.0]
