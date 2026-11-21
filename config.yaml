@@ -7,7 +7,7 @@ meta:
 
 paths:                         # relative to the repo / worktree root
   gebco: data/raw/gebco/GEBCO_2026_med_-6_37E_30_46N.nc
-  vessel_density: data/raw/emodnet_vessel_density/vesseldensity_all_2024_med_clip.tif
+  vessel_density: data/raw/emodnet_vessel_density/merchant/vesseldensity_merchant_2024_med_clip.tif   # passenger + cargo + tanker (EMODnet types 8, 9, 10), 2024 annual average, clipped; the ship network is merchant ships only. All-types layer (incl. fishing, pleasure craft, tugs) is NOT used
   ioc_gauges: data/raw/ioc_tide_gauges/ioc_med_tide_gauges.csv
   coastline: data/raw/natural_earth/ne_10m_land/ne_10m_land.shp
   piraeus_ais: data/raw/piraeus_ais/unipi_ais_dynamic_oct2017.csv
