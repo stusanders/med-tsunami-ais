@@ -26,10 +26,15 @@ physics:
   earth_radius_m: 6371000.0    # mean Earth radius
 
 domain:
-  lon_min_deg: 12.0
+  # Model (solver) domain = area of interest padded by 1.5 deg west and 1 deg north, so the
+  # sponge sits outside the area of interest (Strait of Sicily and Adriatic corridors undamped).
+  # South (30 N) and east (37 E) edges are essentially land and are the limits of the GEBCO
+  # subset, so they are reflecting walls without padding or sponge.
+  lon_min_deg: 10.5
   lon_max_deg: 37.0
   lat_min_deg: 30.0
-  lat_max_deg: 42.0
+  lat_max_deg: 43.0
+  area_of_interest: {lon_deg: [12.0, 37.0], lat_deg: [30.0, 42.0]}   # receivers, gauges, buoys, maps and scoring live here only
   resolution_arcmin: 2.0
   min_wet_depth_m: 10.0        # wet cells clamped to at least this depth
   depth_band_edges_m: [50.0, 200.0]   # Map 1 bands: < 50, 50 to 200, > 200 m (PLAN.md)
@@ -38,13 +43,16 @@ domain:
     messina:     {lon_deg: [15.50, 15.75], lat_deg: [37.95, 38.35]}   # PLACEHOLDER box, check on grid.png
     dardanelles: {lon_deg: [26.15, 26.75], lat_deg: [40.00, 40.50]}   # PLACEHOLDER box
   exclude_boxes:               # set to land (disconnected basins inside the box)
-    black_sea:   {lon_deg: [28.9, 37.0], lat_deg: [41.15, 42.0]}      # PLACEHOLDER: B to check against grid
+    black_sea:   {lon_deg: [28.9, 37.0], lat_deg: [41.15, 43.0]}      # PLACEHOLDER: B to check against grid
+  # Also: land-locked below-sea-level depressions (Qattara, Dead Sea, ...) must be land: keep only
+  # wet cells connected to the open Mediterranean (largest connected wet component).
 
 solver:
   cfl: 0.5                     # dt = cfl * min(dx, dy) / sqrt(g * h_max), then shrunk so 30 s is a whole number of steps
   t_end_s: 7200.0
   sample_interval_s: 30.0
-  sponge_width_cells: 15       # PLACEHOLDER
+  sponge_width_cells: 15       # PLACEHOLDER (0.5 deg at 2 arc-min)
+  sponge_edges: [west, north]  # open-sea edges only; south and east are walls (see domain)
   sponge_max_rate_per_s: 0.01  # PLACEHOLDER: damping rate at the outer edge, tapered (quadratic) to 0 inside
   batch_size: 64
   dtype: float32

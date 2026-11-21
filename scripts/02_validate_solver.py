@@ -224,8 +224,17 @@ def check_linearity_equivalence():
         gpu = backend.to_numpy(Solver(grid, sampler, CFG, xp=backend.xp).run(eta0))
         gerr = float(np.abs(gpu - batched).max()) / float(np.abs(batched).max())
         gpu_txt, gpu_ok = f"CuPy vs NumPy: **{gerr:.1e}**", gerr < TOL_F32
+    elif (FIG / "gpu_check.json").exists():
+        import json
+        rec = json.loads((FIG / "gpu_check.json").read_text())
+        t = rec["timing"]
+        gpu_txt = (f"CuPy vs NumPy: **passed on {rec['gpu']}** ({rec['date']}, commit {rec['commit']}: {rec['pytest']}). "
+                   f"Timing ({rec['timing_grid']}): CuPy B=64 **{t['cupy_B64_s_per_scenario']} s/scenario** "
+                   f"({t['cupy_B64_gcell_updates_per_s']} Gcell-updates/s) vs NumPy on the same runtime "
+                   f"{t['numpy_B1_s_per_scenario']} s/scenario")
+        gpu_ok = True
     else:
-        gpu_txt, gpu_ok = "CuPy vs NumPy: **not run** (no GPU here; pending a T4 slot from Stream B)", None
+        gpu_txt, gpu_ok = "CuPy vs NumPy: **not run** (no GPU here and no outputs/validation/gpu_check.json)", None
     text5 = f"batched vs reference (3 scenarios, 2 h): **{eq:.1e}** (limit {TOL_F32:.0e}); {gpu_txt}"
     return lin_ok, text4, (eq < TOL_F32) and (gpu_ok is not False), text5, gpu_ok
 
@@ -269,32 +278,59 @@ def check_hellenic():
 # ----------------------------------------------------------------- check 7
 
 def check_sponge():
-    """Radial pulse in a square open sea; energy left after the wave should have left the domain.
-
-    Also checks the sponge does not touch the interior before the wave reaches it.
+    """(a) Radial pulse in a square open sea with a sponge on all four edges: energy left after the
+    wave has gone; and the sponge must not touch the interior before the wave arrives.
+    (b) On the real padded domain: no area-of-interest cell lies in the sponge (west and north only).
     """
     h, n = 3000.0, 160
     grid = synthetic_grid(np.full((n, n), h), lat0_deg=35.0)
     jj, ii = np.meshgrid(np.arange(n), np.arange(n), indexing="ij")
     eta0 = np.exp(-(((ii - n / 2) ** 2 + (jj - n / 2) ** 2) / 8.0 ** 2)).astype(np.float32)
-    dt, _ = ref.time_step(grid, CFG)
-    w, r = CFG["solver"]["sponge_width_cells"], CFG["solver"]["sponge_max_rate_per_s"]
+    c = copy.deepcopy(CFG)
+    c["solver"]["sponge_edges"] = ["west", "east", "south", "north"]
+    dt, _ = ref.time_step(grid, c)
+    w, r = c["solver"]["sponge_width_cells"], c["solver"]["sponge_max_rate_per_s"]
     to_sponge = (n / 2 - w - 3 * 8) * min(grid.dx.min(), grid.dy) / np.sqrt(G * h)
     early = max(int(0.8 * to_sponge / dt), 1)
-    a, _, _ = ref.run_fields(grid, eta0, CFG, early)
+    a, _, _ = ref.run_fields(grid, eta0, c, early)
     b, _, _ = ref.run_fields(grid, eta0, closed_cfg(), early)
     interior = float(np.abs(a - b).max() / np.abs(b).max())
     corner = np.hypot(n / 2 * grid.dx.max(), n / 2 * grid.dy) / np.sqrt(G * h)
     late = int(2.0 * corner / dt)
-    a, _, _ = ref.run_fields(grid, eta0, CFG, late)
+    a, _, _ = ref.run_fields(grid, eta0, c, late)
     b, _, _ = ref.run_fields(grid, eta0, closed_cfg(), late)
     frac = float(np.sum(a.astype(np.float64) ** 2) / np.sum(b.astype(np.float64) ** 2))
-    txt = (f"radial pulse in a {n} x {n} flat sea, sponge {w} cells, max rate {r} /s (PLACEHOLDER settings). "
-           f"Before the wave reaches the sponge, open vs closed differ by **{interior:.1e}** (relative). "
-           f"After 2 corner-crossing times, potential energy left (open / closed walls) = **{frac:.4f}** (target < 0.05). "
-           "Note: the sponge acts within that many cells of ANY outer edge, so open-sea edges of the real grid must be "
-           "at least that far from receivers we care about.")
-    return (frac < 0.05) and (interior < TOL_F32), txt
+
+    d = CFG["domain"]
+    res = d["resolution_arcmin"] / 60.0
+    lon = np.arange(d["lon_min_deg"] + res / 2, d["lon_max_deg"], res)
+    lat = np.arange(d["lat_min_deg"] + res / 2, d["lat_max_deg"], res)
+    mask = ref.sponge_mask((len(lat), len(lon)), CFG)
+    aoi_box = d["area_of_interest"]
+    aoi = ((lon[None, :] >= aoi_box["lon_deg"][0]) & (lon[None, :] <= aoi_box["lon_deg"][1])
+           & (lat[:, None] >= aoi_box["lat_deg"][0]) & (lat[:, None] <= aoi_box["lat_deg"][1]))
+    overlap = int((mask & aoi).sum())
+    west_inner = d["lon_min_deg"] + w * res
+    north_inner = d["lat_max_deg"] - w * res
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.pcolormesh(lon, lat, mask, cmap="Greys", vmin=0, vmax=2, shading="auto")
+    ax.add_patch(plt.Rectangle((aoi_box["lon_deg"][0], aoi_box["lat_deg"][0]),
+                               np.diff(aoi_box["lon_deg"])[0], np.diff(aoi_box["lat_deg"])[0],
+                               fill=False, ec="tab:blue", lw=2, label="area of interest"))
+    ax.set_xlabel("longitude (deg E)")
+    ax.set_ylabel("latitude (deg N)")
+    ax.legend(loc="lower right")
+    f = save(fig, "check7_sponge_layout.png", "Check 7: sponge layout on the padded model domain",
+             f"Grey = sponge ({w} cells, west and north edges only); blue = area of interest (receivers allowed only inside).")
+    txt = (f"(a) radial pulse, {n} x {n} flat sea, sponge on all four edges ({w} cells, max rate {r} /s; PLACEHOLDER). "
+           f"Interior before arrival: open vs closed differ by **{interior:.1e}**. Energy left after 2 corner-crossing "
+           f"times (open / closed) = **{frac:.4f}** (target < 0.05).\n\n"
+           f"(b) padded domain {d['lon_min_deg']} to {d['lon_max_deg']} E, {d['lat_min_deg']} to {d['lat_max_deg']} N "
+           f"({len(lon)} x {len(lat)} cells): sponge inner edge at {west_inner:.2f} E and {north_inner:.2f} N, i.e. "
+           f"**{aoi_box['lon_deg'][0] - west_inner:.2f} deg** west of and **{north_inner - aoi_box['lat_deg'][1]:.2f} deg** "
+           f"north of the area of interest. Area-of-interest cells inside the sponge: **{overlap}**. "
+           "South and east edges are reflecting walls (land; limit of the GEBCO subset).")
+    return (frac < 0.05) and (interior < TOL_F32) and overlap == 0, txt, f
 
 
 # ----------------------------------------------------------------- report
@@ -312,7 +348,7 @@ def main():
     if ok5 and gpu_ok is None:
         ok5 = "partial"
     ok6, t6, f6 = check_hellenic()
-    ok7, t7 = check_sponge()
+    ok7, t7, f7 = check_sponge()
     summary = [("1 Flat-bottom arrival (< 2 %)", c1[0]), ("2 Closed-basin volume (< 1 %)", c2[0]),
                ("3 Green's law (within 10 %)", c3[0]), ("4 Linearity and superposition", ok4),
                ("5 Batched == reference; CuPy == NumPy", ok5), ("6 Hellenic Mw 8 snapshots", ok6),
@@ -326,7 +362,7 @@ def main():
           "## 3 Green's law", c3[1], "", f"![]({c3[2]})", "",
           "## 4 Linearity", t4, "", "## 5 Equivalence", t5, "",
           "## 6 Hellenic Arc Mw 8", t6] + ([f"![]({f6})"] if f6 else []) + ["",
-          "## 7 Sponge", t7, ""]
+          "## 7 Sponge", t7, "", f"![]({f7})", ""]
     (OUT / "validation.md").write_text("\n".join(md))
     print("\n".join(f"{mark(o):8s} {n}" for n, o in summary))
     return 0 if all(o is not False for _, o in summary) else 1

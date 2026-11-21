@@ -61,23 +61,37 @@ def _sponge_rate(dist_cells, width, max_rate):
     return max_rate * frac**2
 
 
+EDGES = ("west", "east", "south", "north")
+
+
+def _edge_distance(jj, ii, ny, nx, edges):
+    """Distance (cells) from the nearest of the listed outer edges; edge cell = 0, inf if no edges."""
+    d = np.full(np.broadcast(jj, ii).shape, np.inf)
+    for e in edges:
+        assert e in EDGES, e
+        d = np.minimum(d, {"west": ii, "east": nx - 1 - ii, "south": jj, "north": ny - 1 - jj}[e])
+    return np.maximum(d, 0.0)
+
+
 def sponge_factors(shape_c, dt, cfg):
-    """exp(-gamma dt) at centres, u faces and v faces."""
+    """exp(-gamma dt) at centres, u faces and v faces, on the edges in solver.sponge_edges."""
     ny, nx = shape_c
     width = cfg["solver"]["sponge_width_cells"]
     rate = cfg["solver"]["sponge_max_rate_per_s"]
-
-    def edge_dist(jj, ii, ny_, nx_):
-        # distance (in cells) from the nearest outer edge, edge cell = 0
-        return np.minimum(np.minimum(jj, ny_ - 1 - jj), np.minimum(ii, nx_ - 1 - ii)).astype(float)
-
+    edges = cfg["solver"].get("sponge_edges", EDGES)
     jc, ic = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
     ju, iu = np.meshgrid(np.arange(ny), np.arange(nx + 1) - 0.5, indexing="ij")
     jv, iv = np.meshgrid(np.arange(ny + 1) - 0.5, np.arange(nx), indexing="ij")
-    dc = edge_dist(jc, ic, ny, nx)
-    du = np.maximum(edge_dist(ju, iu, ny, nx), 0)
-    dv = np.maximum(edge_dist(jv, iv, ny, nx), 0)
-    return tuple(np.exp(-_sponge_rate(d, width, rate) * dt) for d in (dc, du, dv))
+    dists = [_edge_distance(j, i, ny, nx, edges) for j, i in ((jc, ic), (ju, iu), (jv, iv))]
+    return tuple(np.exp(-_sponge_rate(np.minimum(d, 1e9), width, rate) * dt) for d in dists)
+
+
+def sponge_mask(shape_c, cfg):
+    """(ny, nx) bool: cells where the sponge damps (no receivers, gauges or buoys allowed there)."""
+    ny, nx = shape_c
+    jc, ic = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
+    d = _edge_distance(jc, ic, ny, nx, cfg["solver"].get("sponge_edges", EDGES))
+    return d < cfg["solver"]["sponge_width_cells"]
 
 
 def grid_ops(grid, cfg, dtype=np.float32):

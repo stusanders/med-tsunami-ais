@@ -119,6 +119,7 @@ Then in parallel:
 ### T01: Grid and masks
 - **Files:** `src/tsunami/grid.py`, `tests/test_grid.py`.
 - GEBCO subset to 2 arc-minutes; land mask; wet depth clamped to 10 m; spherical metric spacing; distance to coast; depth bands; strait mask (at least Messina, list in config).
+- **Padded domain (update Sat 19:55):** the grid covers 10.5 to 37 E, 30 to 43 N (area of interest 12 to 37 E, 30 to 42 N, padded 1.5 deg west and 1 deg north) so the sponge on the west and north edges sits outside the area of interest. Keep only wet cells connected to the open sea (Qattara and Dead Sea are below sea level but dry). Receivers, gauges and buoys (T04, T06) must be inside the area of interest and outside `solver_reference.sponge_mask`.
 - **Done when:** shapes match the contract; `outputs/grid.png`.
 
 ### T04: Receiver pool and ship sampling
