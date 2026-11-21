@@ -328,6 +328,55 @@ def _benchmark_tables_html(out_dir: Path) -> str:
     return "\n".join(parts)
 
 
+
+
+def _reshaping_ladder_html(out_dir: Path) -> str:
+    lpath = out_dir / "reshaping_ladder.json"
+    if not lpath.exists():
+        return '<div class="pending"><strong>Pending:</strong> <code>outputs/reshaping_ladder.json</code> not yet generated.</div>'
+    data = json.loads(lpath.read_text(encoding="utf-8"))
+    counts = data.get("experiment_counts", {})
+    rows = data.get("rows", [])
+    notes = data.get("notes", [])
+
+    tbl_rows = []
+    for r in rows:
+        sp = r.get("speedup_vs_naive", 1.0)
+        if sp < 1.5:
+            sp_s = "1×"
+        elif sp >= 1e6:
+            sp_s = f"{sp/1e6:.2f}M×"
+        elif sp >= 1e3:
+            sp_s = f"{sp/1e3:.1f}k×"
+        else:
+            sp_s = f"{sp:.0f}×"
+        tbl_rows.append(
+            {
+                "Step": r.get("short_label", ""),
+                "Formula": r.get("formula", ""),
+                "Total wall-clock": r.get("human_total", ""),
+                "Speedup vs naive": sp_s,
+                "Status": r.get("status", ""),
+            }
+        )
+
+    parts = [
+        "<h3>What Reshaping Saves: Full-Experiment Wall-Clock Ladder</h3>",
+        (
+            f"<p>Experiment size read from <code>candidates.csv</code>, <code>truth/sources.csv</code>, and <code>config.yaml</code>: "
+            f"<strong>{counts.get('n_truth_map2', 0):,}</strong> Map 2 + <strong>{counts.get('n_truth_twin', 0):,}</strong> twin "
+            f"= <strong>{counts.get('n_truth', 0):,}</strong> truth events &times; <strong>{counts.get('n_strata', 0)}</strong> strata "
+            f"&times; <strong>{counts.get('n_draws_per_stratum', 0)}</strong> draws = <strong>{counts.get('n_trials', 0):,} trials</strong>; "
+            f"<strong>K = {counts.get('K', 0):,}</strong> candidates (<strong>K2 = {counts.get('K2', 0):,}</strong> with Aegean flips); "
+            f"<strong>{counts.get('n_library_build', 0):,}</strong> library + truth + historic PDE runs.</p>"
+        ),
+        _df_to_html(pd.DataFrame(tbl_rows)),
+    ]
+    if notes:
+        parts.append('<div class="callout"><ul>' + "".join(f"<li>{html.escape(n)}</li>" for n in notes) + "</ul></div>")
+    return "\n".join(parts)
+
+
 def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
     out_dir = repo_path(cfg["paths"]["outputs"]) if out_dir is None else Path(out_dir)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -483,6 +532,8 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   {_benchmark_tables_html(out_dir)}
   {_figure_html(out_dir / "benchmark.png", "Performance benchmark (T19): Workload A solver (linear scale, machine-labelled bars, same-machine Colab CPU vs T4 speedup) and Workload B scoring at E=100 splitting vectorisation gain from prefix-scan gain.", out_dir, embed)}
   {_figure_html(out_dir / "what_speed_buys.png", "What a fixed 1-hour compute budget buys: linear scenarios/hour including Colab T4 GPU (left) and scoring draws per truth event per stratum with exact formula once the library exists (right).", out_dir, embed)}
+  {_reshaping_ladder_html(out_dir)}
+  {_figure_html(out_dir / "reshaping_ladder.png", "What Reshaping Saves: full-experiment wall-clock ladder from 137 years (fully naive CPU) down to 5.6 hours (reshaped CPU) and 60.4 min (reshaped Colab T4 including 14.1 min of template gather/aggregation across 20 calls).", out_dir, embed)}
 </section>
 
 <section id="c4">

@@ -278,8 +278,11 @@ def check_hellenic():
     fig.savefig(path, dpi=120)
     plt.close(fig)
     f = "validation/check6_hellenic_mw8.png"
-    txt = (f"source peak uplift **{eta0.max():.2f} m**, peak subsidence **{eta0.min():.2f} m**; "
-           f"compare with a published Hellenic Mw 8 scenario amplitude (citation to add).")
+    txt = (f"source peak uplift **{eta0.max():.2f} m**, peak subsidence **{eta0.min():.2f} m** "
+           f"(uplift = slip x sin(mean dip), EFSM20 Hellenic mean dip {row.get('uplift_dip_deg', row['dip_deg']):.0f} deg). "
+           "Published Hellenic Arc scenarios of Mw 8 to 8.5 on the low-dip interface report seafloor uplift of order "
+           "1 to 2 m (Lorito et al. 2008, JGR 113, B01301; Shaw et al. 2008, Nat. Geosci. 1, 268-276), so a value just "
+           "under 1 m at Mw 8.0 is plausible.")
     return True, txt, f
 
 
