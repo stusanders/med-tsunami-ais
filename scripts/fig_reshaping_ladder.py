@@ -25,6 +25,7 @@ import argparse
 import json
 import sys
 import tempfile
+import textwrap
 import time
 from pathlib import Path
 
@@ -42,6 +43,38 @@ SEC_PER_MIN = 60.0
 SEC_PER_HOUR = 3600.0
 SEC_PER_DAY = 86400.0
 SEC_PER_YEAR = 365.25 * SEC_PER_DAY
+
+PLAIN_ROW_TEXT = {
+    1: (
+        "1. Naive",
+        "for every test, re-simulate every possible earthquake from scratch, then check one by one whether the ships are drifting the way each would predict.",
+    ),
+    2: (
+        "2. Reuse the wave",
+        "simulate each earthquake once per arrangement of ships, and reuse that wave for every weather and noise variation, since the wave itself doesn't change.",
+    ),
+    3: (
+        "3. Look it up",
+        "simulate each earthquake once, ever, recording its effect everywhere a ship could be, so any set of ships just looks up what it would see.",
+    ),
+    4: (
+        "4. Check in bulk",
+        "compare the ships' drift against every possible earthquake in one big calculation, instead of one earthquake and one ship at a time.",
+    ),
+    5: (
+        "5. Keep a running total",
+        'each minute, add that minute\'s "do the ships match this earthquake?" number to each earthquake\'s total, instead of re-adding every earlier minute.',
+    ),
+    6: (
+        "6. Use a GPU",
+        "run exactly the same method on hardware built to do thousands of these calculations at once.",
+    ),
+}
+
+ROW_2_3_NOTE = (
+    "From row 2 onward most of the time is the one-at-a-time checking (about 2.5 years), "
+    "which is why looking the waves up saves little until the checking itself is reshaped."
+)
 
 
 def format_duration(seconds: float) -> str:
@@ -532,8 +565,16 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
             }
         )
 
+    # Attach verbatim plain-language titles/descriptions & keep technical labels in JSON
+    for r in rows:
+        ptitle, pdesc = PLAIN_ROW_TEXT[r["row"]]
+        r["plain_title"] = ptitle
+        r["plain_description"] = pdesc
+        r["human_short"] = format_duration(r["total_s"])
+        r["technical_label"] = r["short_label"]
+
     # Compute speedups & check against rough estimates (flag any >30% difference in notes)
-    notes = []
+    notes = [ROW_2_3_NOTE]
     for idx, r in enumerate(rows):
         r["speedup_vs_naive"] = float(row1_s / r["total_s"])
         r["step_speedup_vs_prev"] = float(rows[idx - 1]["total_s"] / r["total_s"]) if idx > 0 else 1.0
@@ -608,26 +649,62 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
 
     # ---- Figure: outputs/reshaping_ladder.png ----
     viz.apply_style()
-    fig, ax = plt.subplots(figsize=(13.6, 6.4))
+    fig, (ax_lbl, ax) = plt.subplots(
+        1,
+        2,
+        figsize=(15.6, 8.4),
+        gridspec_kw={"width_ratios": [0.76, 1.54]},
+        sharey=True,
+    )
 
     y_pos = np.arange(len(rows))[::-1]
     totals = [r["total_s"] for r in rows]
     palette = [
-        viz.COLORS["negative"],   # 1. fully naive
-        "#CC79A7",                # 2. re-sim per (event, traffic)
-        viz.COLORS["neutral"],    # 3. library + loops
-        viz.COLORS["moderate"],   # 4. library + vec no-prefix
-        viz.COLORS["positive"],   # 5. fully reshaped CPU
-        viz.COLORS["ships"],      # 6. fully reshaped T4 GPU
+        viz.COLORS["negative"],   # 1. Naive
+        "#CC79A7",                # 2. Reuse the wave
+        viz.COLORS["neutral"],    # 3. Look it up
+        viz.COLORS["moderate"],   # 4. Check in bulk
+        viz.COLORS["positive"],   # 5. Keep a running total
+        viz.COLORS["ships"],      # 6. Use a GPU
     ][: len(rows)]
 
-    bars = ax.barh(y_pos, totals, height=0.62, color=palette, edgecolor="#333333", linewidth=0.7)
+    # Left column: verbatim plain-language step title + description (durations computed from JSON)
+    ax_lbl.axis("off")
+    ax_lbl.set_xlim(0.0, 1.0)
+    for y, r in zip(y_pos, rows):
+        hdr = f"{r['plain_title']} ({r['human_short']}):"
+        wrapped = textwrap.fill(r["plain_description"], width=62)
+        ax_lbl.text(
+            0.01,
+            y + 0.14,
+            hdr,
+            ha="left",
+            va="bottom",
+            fontsize=10.2,
+            fontweight="bold",
+            color="#111111",
+        )
+        ax_lbl.text(
+            0.01,
+            y + 0.09,
+            wrapped,
+            ha="left",
+            va="top",
+            fontsize=9.0,
+            color="#2A2A2A",
+            linespacing=1.22,
+        )
+        if y > 0:
+            ax_lbl.axhline(y - 0.5, color="#E5E9EF", lw=0.7, xmin=0.01, xmax=0.99)
+
+    # Right column: horizontal log-scale wall-clock bars
+    ax.barh(y_pos, totals, height=0.54, color=palette, edgecolor="#333333", linewidth=0.7)
     ax.set_xscale("log")
     xmin = min(totals) * 0.25
-    xmax = max(totals) * 180.0
+    xmax = max(totals) * 220.0
     ax.set_xlim(xmin, xmax)
+    ax.set_ylim(-0.58, len(rows) - 0.42)
 
-    # Human-unit reference ticks on log x-axis
     ref_ticks = [
         (60.0, "1 min"),
         (3600.0, "1 h"),
@@ -640,9 +717,13 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
     ax.set_xticks([v for v, _ in visible_ticks])
     ax.set_xticklabels([lbl for _, lbl in visible_ticks], fontsize=9)
     ax.set_yticks(y_pos)
-    ax.set_yticklabels([r["label"] for r in rows], fontsize=8.8)
+    ax.set_yticklabels([])
+    ax.tick_params(axis="y", length=0)
     ax.set_xlabel("Total wall-clock time for full experiment (log scale, human units)")
     ax.grid(True, axis="x", which="major", linestyle=":", alpha=0.65)
+    for y in y_pos:
+        if y > 0:
+            ax.axhline(y - 0.5, color="#F0F2F5", lw=0.6, zorder=0.1)
 
     for y, r in zip(y_pos, rows):
         v = r["total_s"]
@@ -656,19 +737,33 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
             sp_txt = f"{sp/1e3:.1f}k x faster"
         else:
             sp_txt = f"{sp:.0f}x faster"
-        txt_lbl = f" {r['human_total']}  ({sp_txt})  [{tag}]"
-        ax.text(v * 1.18, y, txt_lbl, va="center", ha="left", fontsize=8.3,
-                fontweight="bold" if r["row"] in (1, len(rows)) else "normal")
+        txt_lbl = f" {r['human_short']}  ({sp_txt})  [{tag}]"
+        ax.text(
+            v * 1.22,
+            y,
+            txt_lbl,
+            va="center",
+            ha="left",
+            fontsize=8.3,
+            fontweight="bold" if r["row"] in (1, len(rows)) else "normal",
+        )
 
     size_box = (
-        f"Experiment size (from candidates.csv, truth/sources.csv, config.yaml):\n"
-        f"• Truth events: {counts['n_truth_map2']:,} Map 2 + {counts['n_truth_twin']:,} twin = {counts['n_truth']:,}\n"
-        f"• Strata: {counts['n_strata']} ({counts['n_operators']} op × {counts['n_range_caps']} caps × {counts['n_regimes']} regimes) × {counts['n_draws_per_stratum']} draws = {counts['n_trials']:,} trials\n"
-        f"• Candidates: K = {counts['K']:,} (K2 = {counts['K2']:,} w/ Aegean flips); library build = {counts['n_library_build']:,} runs\n"
-        f"• Gather/agg ({counts['n_agg_calls']} calls): {format_duration(t_agg_total)} in Rows 3–6 (Row 6: MacBook-measured, Colab CPU in practice)"
+        f"Experiment size (candidates.csv, truth/sources.csv, config.yaml):\n"
+        f"• Truth: {counts['n_truth_map2']:,} Map 2 + {counts['n_truth_twin']:,} twin = {counts['n_truth']:,} events\n"
+        f"• Trials: {counts['n_strata']} strata × {counts['n_draws_per_stratum']} draws = {counts['n_trials']:,} trials\n"
+        f"• Library: K = {counts['K']:,} (K2 = {counts['K2']:,}); {counts['n_library_build']:,} runs\n"
+        f"• Gather/agg ({counts['n_agg_calls']} calls): {format_duration(t_agg_total)} in Rows 3–6\n"
+        f"  (Row 6: MacBook-measured, Colab CPU in practice)"
     )
     ax.text(
-        0.985, 0.04, size_box, transform=ax.transAxes, ha="right", va="bottom", fontsize=7.6,
+        0.985,
+        0.03,
+        size_box,
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=7.6,
         bbox={"boxstyle": "round,pad=0.38", "fc": "#F7FAFD", "ec": viz.COLORS["ships"], "alpha": 0.95},
     )
 
@@ -676,7 +771,14 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
         fig,
         out_dir / "reshaping_ladder.png",
         "What Reshaping Saves: Full Eastern Mediterranean OSSE Wall-Clock Ladder",
-        f"Computed from measured real-grid per-unit timings (MacBook arm64 CPU & Colab {gpu_name}) for {counts['n_trials']:,} trials, K={counts['K']:,} candidates, and {counts['n_library_build']:,} library+truth+historic runs, including {format_duration(t_agg_total)} for {counts['n_agg_calls']} template gather/aggregation calls (Row 6 gather/agg: MacBook-measured, Colab CPU in practice). All per-unit timings are measured; totals are extrapolated until T14+T17 wall-clock logs land.",
+        (
+            f"{ROW_2_3_NOTE} "
+            f"Computed from measured real-grid per-unit timings (MacBook arm64 CPU & Colab {gpu_name}) for "
+            f"{counts['n_trials']:,} trials, K={counts['K']:,} candidates, and {counts['n_library_build']:,} library+truth+historic runs, "
+            f"including {format_duration(t_agg_total)} for {counts['n_agg_calls']} template gather/aggregation calls "
+            f"(Row 6 gather/agg: MacBook-measured, Colab CPU in practice). "
+            f"All per-unit timings are measured; totals are extrapolated until T14+T17 wall-clock logs land."
+        ),
     )
     print(f"Wrote {out_dir / 'reshaping_ladder.json'} and {out_dir / 'reshaping_ladder.png'}")
     return payload

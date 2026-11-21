@@ -105,3 +105,10 @@ def test_build_reshaping_ladder_end_to_end(tmp_path):
     # Every per-unit timing records its source file
     for entry in payload["per_unit_timings"].values():
         assert "source_file" in entry and entry["source_file"]
+    # Verbatim plain-language titles, descriptions, technical labels, and row 2-3 note
+    for r in rows:
+        assert r["plain_title"] == mod.PLAIN_ROW_TEXT[r["row"]][0]
+        assert r["plain_description"] == mod.PLAIN_ROW_TEXT[r["row"]][1]
+        assert r["technical_label"]
+        assert r["human_short"]
+    assert mod.ROW_2_3_NOTE in payload["notes"]
