@@ -156,7 +156,13 @@ sources:
     amorgos_1956: {lon_deg: 25.76, lat_deg: 36.72}     # Okal et al. (2009) GJI 178, relocated mainshock
   arc_geometry: data/raw/neamthm18/efsm20_meshes/efsm20_si_meshes.geojson  # EFSM20 subduction meshes (Basili et al. 2024, doi:10.13127/efsm20/meshes); idfs GRSS001 Hellenic, ITSS001 Calabrian, CYSS001 Cyprus
   rigidity_pa: 3.0e+10         # PLACEHOLDER: conventional crustal value
-  uplift_fraction_of_slip: 0.3 # PLACEHOLDER
+  # Peak uplift = slip x sin(mean dip) for every source (human decision, Sat ~21:00): arcs use EFSM20's
+  # published mean interface dip per source (dipavg in efsm20_si_parameters.geojson: Hellenic 15, Calabrian 13,
+  # Cyprus 32 deg); Aegean and historic sources use their fault dip. Samos 2020 motivated this change (it was ~4x too
+  # small with the fixed 0.3), so Samos is a consistency check, not fully independent validation.
+  uplift_rule: slip_sin_mean_dip
+  legacy_uplift_fraction_of_slip: 0.3   # the T14 library was built with uplift = 0.3 x slip; T17 rescales by uplift_scale
+  arc_parameters: data/raw/neamthm18/efsm20/efsm20_si_parameters.geojson   # EFSM20 source parameters (dipavg)
   subsidence_ratio: 0.3        # PLACEHOLDER: subsidence peak / uplift peak
   landward_offset_widths: 1.0  # PLACEHOLDER: subsidence lobe centre, in rupture widths down-dip of uplift centre
 

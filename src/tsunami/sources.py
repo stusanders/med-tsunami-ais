@@ -8,7 +8,9 @@ from the Samos 2020 and Amorgos 1956 epicentres.
 Source shape: Gaussian uplift elongated along strike, plus a smaller Gaussian subsidence lobe
 down-dip (landward), so horizontal currents see a realistic dipole. Rupture length and width from a
 magnitude scaling relation (interface: Strasser et al. 2010; crustal: Wells & Coppersmith 1994),
-slip from M0 = mu L W D, peak uplift = fraction x slip, subsidence = ratio x uplift (PLACEHOLDERs).
+slip from M0 = mu L W D, peak uplift = slip x sin(mean dip) (arcs: EFSM20 dipavg), subsidence = ratio x
+uplift (PLACEHOLDER). The source SHAPE uses dip_deg (unchanged since the T14 library build); only the
+amplitude uses uplift_dip_deg, so library templates rescale exactly by uplift_scale().
 
 Angles in the tables are degrees (strike_deg, dip_deg) and converted with units.deg2rad.
 Strike follows Aki-Richards: dip direction = strike + 90 deg.
@@ -80,7 +82,7 @@ def arc_mesh(idfs, cfg):
             verts[p[f"idvertex{k}"]] = (p[f"lon{k}"], p[f"lat{k}"], -p[f"depth{k}"])   # depths to positive down
     v = np.array(list(verts.values()), dtype=float)
     t = pd.DataFrame([{"lon_c": p["lon_c"], "lat_c": p["lat_c"], "depth_c_m": -p["depth_c"],
-                       "strike": p["strike"], "dip": p["dip"]} for p in tris])
+                       "strike": p["strike"], "dip": p["dip"], "area": p["area"]} for p in tris])
     return v, t
 
 
@@ -169,6 +171,30 @@ def aegean_positions(cfg, grid):
 
 # ------------------------------------------------------------------ table
 
+@lru_cache(maxsize=1)
+def _arc_dipavg(path):
+    feats = json.load(open(path))["features"]
+    return {f["properties"]["idfs"]: float(f["properties"]["dipavg"]) for f in feats}
+
+
+def rupture_mean_dip(region, dip, cfg):
+    """Mean dip (deg) for the uplift rule: arcs = EFSM20 published mean interface dip (dipavg) of the source;
+    crustal and historic sources = their fault dip."""
+    if region in cfg["sources"]["arcs"]:
+        return _arc_dipavg(str(repo_path(cfg["sources"]["arc_parameters"])))[cfg["sources"]["arcs"][region]]
+    return float(dip)
+
+
+def uplift_factor(row):
+    """Peak uplift / slip = sin(mean dip)."""
+    return float(np.sin(deg2rad(row.get("uplift_dip_deg", row["dip_deg"]))))
+
+
+def uplift_scale(row, cfg):
+    """Multiplier from the legacy fixed fraction (T14 library) to the current rule; exact because eta0 is linear in uplift."""
+    return uplift_factor(row) / cfg["sources"]["legacy_uplift_fraction_of_slip"]
+
+
 def _source_row(region, pos_id, trench_lon, trench_lat, strike, dip, mw, cfg):
     """One source: rupture size from Mw; uplift centre down-dip of the trench point (arcs only)."""
     R = cfg["physics"]["earth_radius_m"]
@@ -179,10 +205,12 @@ def _source_row(region, pos_id, trench_lon, trench_lat, strike, dip, mw, cfg):
         off = cfg["sources"]["uplift_centre_downdip_frac"] * W * np.cos(deg2rad(dip))
         dx, dy = _bearing_vec(strike + 90.0)
         lon, lat = _move(trench_lon, trench_lat, off * dx, off * dy, R)
+    udip = rupture_mean_dip(region, dip, cfg)
     return dict(region=region, pos_id=pos_id, lon_deg=float(lon), lat_deg=float(lat),
                 trench_lon_deg=float(trench_lon), trench_lat_deg=float(trench_lat),
                 strike_deg=float(strike), dip_deg=float(dip), mw=float(mw),
-                length_m=L, width_m=W, slip_m=slip, polarity=1, flip_allowed=region == "aegean")
+                length_m=L, width_m=W, slip_m=slip, polarity=1, flip_allowed=region == "aegean",
+                uplift_dip_deg=udip)
 
 
 def _in_aoi(lon, lat, cfg):
@@ -244,7 +272,7 @@ def custom_source(lon_deg, lat_deg, strike_deg, dip_deg, mw, fault, cfg, length_
     return dict(region=region, pos_id=-1, lon_deg=float(lon_deg), lat_deg=float(lat_deg),
                 trench_lon_deg=float(lon_deg), trench_lat_deg=float(lat_deg), strike_deg=float(strike_deg),
                 dip_deg=float(dip_deg), mw=float(mw), length_m=float(L), width_m=float(W), slip_m=float(slip_m),
-                polarity=1 if fault == "thrust" else -1, flip_allowed=False, name=name)
+                polarity=1 if fault == "thrust" else -1, flip_allowed=False, name=name, uplift_dip_deg=float(dip_deg))
 
 
 # ------------------------------------------------------------------ initial surface
@@ -264,7 +292,7 @@ def source_eta0(grid, row, cfg, kind=None, polarity=None):
     floor = s["min_sigma_m"]
     sig_a = max(s["gaussian_sigma_frac"] * row["length_m"], floor)
     sig_c = max(s["gaussian_sigma_frac"] * w_h, floor)
-    up = s["uplift_fraction_of_slip"] * row["slip_m"]
+    up = uplift_factor(row) * row["slip_m"]
     eta = up * np.exp(-0.5 * ((along / sig_a) ** 2 + (across / sig_c) ** 2))
     if kind == "dipole":
         off = s["landward_offset_widths"] * max(w_h, floor)

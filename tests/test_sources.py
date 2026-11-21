@@ -111,3 +111,19 @@ def test_custom_normal_fault_is_subsidence_first(grid):
     assert t["polarity"] == 1
     with pytest.raises(ValueError):
         sources.custom_source(26.8, 37.9, 270.0, 45.0, 7.0, "strike-slip", CFG)
+
+
+def test_uplift_rule_is_slip_sin_mean_dip_and_rescales_library_exactly(grid, table):
+    for region, idfs in CFG["sources"]["arcs"].items():
+        r = table[table.region == region].iloc[0]
+        assert r.uplift_dip_deg == pytest.approx(sources._arc_dipavg(str(repo_path(CFG["sources"]["arc_parameters"])))[idfs])
+    aeg = table[table.region == "aegean"].iloc[0]
+    assert aeg.uplift_dip_deg == pytest.approx(aeg.dip_deg)
+    row = table[(table.region == "hellenic") & np.isclose(table.mw, 8.0)].iloc[10]
+    eta = sources.source_eta0(grid, row, CFG)
+    assert eta.max() == pytest.approx(np.sin(np.deg2rad(row.uplift_dip_deg)) * row.slip_m, rel=1e-3)
+    legacy = dict(row, uplift_dip_deg=np.rad2deg(np.arcsin(CFG["sources"]["legacy_uplift_fraction_of_slip"])))
+    np.testing.assert_allclose(eta, sources.source_eta0(grid, legacy, CFG) * sources.uplift_scale(row, CFG),
+                               rtol=1e-5, atol=1e-7)
+    s = sources.custom_source(26.784, 37.897, 276.0, 48.0, 7.0, "normal", CFG, length_m=32000.0, width_m=15000.0, slip_m=1.0)
+    assert sources.uplift_factor(s) == pytest.approx(np.sin(np.deg2rad(48.0)))
