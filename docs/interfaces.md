@@ -250,8 +250,10 @@ baseline_detector.false_alarm_rate(stat_quiet, k) -> float     # measured, used 
 
 ```python
 gauges.load_gauges(grid, cfg) -> DataFrame   # code, name, lon_deg, lat_deg, cell_j, cell_i, rtype (1|2), threshold_m, delay_s
-gauges.trigger_times(gb30 (E, 240, R_gb), table) -> (E, R_gb) seconds, inf if never
-    # first sample with |eta| > threshold_m, at t = 30 (k+1) s, plus delay_s
+gauges.trigger_times(gb30 (E, 240, R_gb), table, eta0_gb=None (E, R_gb), sample_interval_s=None) -> (E, R_gb) seconds, inf if never
+    # first sample with |eta(t) - eta(0)| > threshold_m, at t = 30 (k+1) s, plus delay_s.
+    # eta(0) = the source's eta0 at the gauge/buoy cell (x uplift_scale): a gauge on land that moves in the
+    # earthquake moves with the water, so the static co-seismic offset must not trigger it (human review, Sat ~21:45).
 ```
 
 The gauges and buoys in `load_gauges` are the same, in the same order, as the gauge and buoy section of the pool.
