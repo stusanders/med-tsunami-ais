@@ -135,3 +135,43 @@ def test_full_sweep_recovers_planted_events(world):
     assert (df[df.detector == "single_literal"].best_cand_id == -1).all()
     assert df.noise_seed.nunique() == N
     assert np.isfinite(df.n_ships).all()
+
+
+def test_gap_and_scaling_paths_run_and_detect(world):
+    w = world
+    pool, cand, truth = w["pool"], w["cand"], w["truth"]
+    cache = w["root"] / "c3"
+    lib, tlib = scoring.Library(w["root"] / "lib"), scoring.Library(w["root"] / "truth")
+    cap, op, regime = 100000.0, "ais", "calm"
+    valid_for = lambda f, c, o: observe.gaps(f.draws[c], CFG, np.random.default_rng([1, 7, f.idx]), drop_frac=0.1)
+    qf = {i: SW.make_fleet(pool, CFG, SW.PURPOSE_QTRAFFIC, i) for i in (0, 1)}
+    SW.gather_pass(lib, cand.cand_id.values, list(qf.values()), CFG, cache, "qg", valid_fn=valid_for)
+    qs = SW.quiet_stats(cache, "qg", qf, quiet_table(), pool, CFG, cand, strata=[(op, cap, regime)], valid_fn=valid_for)
+    assert list(qs) == [(op, cap, regime)]
+    tdf, thr = SW.thresholds(qs, CFG)
+    assert len(tdf) == 3
+    f = SW.make_fleet(pool, CFG, SW.PURPOSE_TRAFFIC, 0)
+    SW.gather_pass(lib, cand.cand_id.values, [f], CFG, cache, "lg", valid_fn=valid_for)
+    SW.gather_pass(tlib, truth.run_id.values, [f], CFG, cache, "tr", per_ship=True)
+    v = valid_for(f, cap, op)
+    assert 0.8 < v.mean() < 0.97
+    sig = np.load(cache / f"tr_ship_{f.purpose}_{f.idx}_{op}.npy", mmap_mode="r")
+    groups = f.groups[(cap, op)]
+    Dsv = scoring.aggregate(np.asarray(sig)[:, f.masks[cap], :], groups, v, xp=np)
+    G = np.asarray(SW.load_G(cache, "lg", f, cap, op))
+    from tsunami import gauges
+    gt = pd.DataFrame({"code": pool.code[w["gb_idx"]], "lon_deg": pool.lon[w["gb_idx"]], "lat_deg": pool.lat[w["gb_idx"]],
+                       "rtype": pool.rtype[w["gb_idx"]], "threshold_m": 0.05, "delay_s": 180.0})
+    trig, _ = SW.gauge_table(truth, CFG, w["root"] / "truth", gt)
+    gcols = SW.gauge_columns(truth, trig, CFG, gt)
+    df = SW.event_shard(pool, f, cap, op, regime, truth, Dsv, sig, G, cand, thr[(op, cap, regime)], gcols, CFG, 3, valid=v)
+    net = df[df.detector == "network"]
+    assert net.detected.mean() > 0.9
+    # a linear rescale of the truth signal by 0.0 must not be detected; Scaled is lazy and exact
+    Dz = SW.Scaled(SW.load_G(cache, "tr", f, cap, op), 0.0)
+    assert np.all(np.asarray(Dz[slice(0, 2)]) == 0)
+    z = SW.event_shard(pool, f, cap, op, regime, truth, Dz, SW.Scaled(sig, 0.0), np.asarray(SW.load_G(cache, "lg", f, cap, op)), cand,
+                       thr[(op, cap, regime)], gcols, CFG, 3, valid=v)
+    assert z[z.detector == "network"].detected.mean() < 0.5
+    lv = SW.map2_levels(df.assign(run_kind="truth_map2"), truth.assign(pos_id=truth.run_id, region="r"))
+    assert len(lv) == 3
