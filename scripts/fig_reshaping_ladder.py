@@ -492,7 +492,7 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
         row6_agg_s = t_agg_total
         row6_s = row6_sim_s + row6_agg_s + row6_score_s
         row6_formula = (
-            f"{sim_part} + gather/agg ({n_agg} calls = {t_agg_total:.1f} s) "
+            f"{sim_part} + gather/agg ({n_agg} calls = {t_agg_total:.1f} s; MacBook-measured, Colab CPU in practice) "
             f"+ trials ({n_trials:,}) * t_tensor_gpu ({t_tgpu:.5f} s)"
         )
     else:
@@ -529,8 +529,8 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
             extra = ""
             if r["row"] == 6 and r["agg_s"] > 0:
                 extra = (
-                    " Including the 20 CPU scoring.aggregate_templates calls (reading 31.3 GB x 20 = 626 GB "
-                    "through Library.__getitem__ before slicing active ships) adds "
+                    " Including the 20 CPU scoring.aggregate_templates calls (MacBook-measured, Colab CPU in practice; "
+                    "reading 31.3 GB x 20 = 626 GB through Library.__getitem__ before slicing active ships) adds "
                     f"{format_duration(r['agg_s'])} on top of {format_duration(r['sim_s'] + r['scoring_s'])} of GPU solve+score."
                 )
             notes.append(
@@ -624,7 +624,7 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
         f"• Truth events: {counts['n_truth_map2']:,} Map 2 + {counts['n_truth_twin']:,} twin = {counts['n_truth']:,}\n"
         f"• Strata: {counts['n_strata']} ({counts['n_operators']} op × {counts['n_range_caps']} caps × {counts['n_regimes']} regimes) × {counts['n_draws_per_stratum']} draws = {counts['n_trials']:,} trials\n"
         f"• Candidates: K = {counts['K']:,} (K2 = {counts['K2']:,} w/ Aegean flips); library build = {counts['n_library_build']:,} runs\n"
-        f"• Gather/agg ({counts['n_agg_calls']} aggregate_templates calls): {format_duration(t_agg_total)} included in Rows 3–6"
+        f"• Gather/agg ({counts['n_agg_calls']} calls): {format_duration(t_agg_total)} in Rows 3–6 (Row 6: MacBook-measured, Colab CPU in practice)"
     )
     ax.text(
         0.985, 0.04, size_box, transform=ax.transAxes, ha="right", va="bottom", fontsize=7.6,
@@ -635,7 +635,7 @@ def build_reshaping_ladder(cfg, out_dir: Path = None, agg_measurement: dict = No
         fig,
         out_dir / "reshaping_ladder.png",
         "What Reshaping Saves: Full Eastern Mediterranean OSSE Wall-Clock Ladder",
-        f"Computed from measured real-grid per-unit timings (MacBook arm64 CPU & Colab {gpu_name}) for {counts['n_trials']:,} trials, K={counts['K']:,} candidates, and {counts['n_library_build']:,} library+truth+historic runs, including {format_duration(t_agg_total)} for {counts['n_agg_calls']} template gather/aggregation calls. All per-unit timings are measured; totals are extrapolated until T14+T17 wall-clock logs land.",
+        f"Computed from measured real-grid per-unit timings (MacBook arm64 CPU & Colab {gpu_name}) for {counts['n_trials']:,} trials, K={counts['K']:,} candidates, and {counts['n_library_build']:,} library+truth+historic runs, including {format_duration(t_agg_total)} for {counts['n_agg_calls']} template gather/aggregation calls (Row 6 gather/agg: MacBook-measured, Colab CPU in practice). All per-unit timings are measured; totals are extrapolated until T14+T17 wall-clock logs land.",
     )
     print(f"Wrote {out_dir / 'reshaping_ladder.json'} and {out_dir / 'reshaping_ladder.png'}")
     return payload
