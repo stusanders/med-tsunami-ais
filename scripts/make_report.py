@@ -349,12 +349,17 @@ def _reshaping_ladder_html(out_dir: Path) -> str:
             sp_s = f"{sp/1e3:.1f}k×"
         else:
             sp_s = f"{sp:.0f}×"
+        step_str = (
+            f"{r['plain_title']} ({r.get('human_short', r.get('human_total', ''))}): {r['plain_description']}"
+            if "plain_title" in r and "plain_description" in r
+            else r.get("short_label", "")
+        )
         tbl_rows.append(
             {
-                "Step": r.get("short_label", ""),
-                "Formula": r.get("formula", ""),
+                "Step": step_str,
                 "Total wall-clock": r.get("human_total", ""),
                 "Speedup vs naive": sp_s,
+                "Technical formula": r.get("formula", ""),
                 "Status": r.get("status", ""),
             }
         )
@@ -387,7 +392,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
         fd_src = fd.get("source", {})
         fg_s = fd.get("first_gauge_s")
         fb_s = fd.get("first_buoy_s")
-        fg_str = f"{fg_s/60.0:.1f} min" if fg_s is not None else "none"
+        fg_str = f"{fg_s:.0f} s ({fg_s/60.0:.1f} min)" if fg_s is not None else "none"
         fb_str = f"{fb_s/60.0:.0f} min" if fb_s is not None else "none"
         t13_caption = (
             f"First detection map (T13, traffic draw 0): Hellenic Arc Mw {fd_src.get('mw', 8.0):.1f} "
@@ -555,7 +560,7 @@ def build_report(cfg, out_dir: Path = None, embed: bool = True) -> Path:
   {_figure_html(out_dir / "benchmark.png", "Performance benchmark (T19): Workload A solver (linear scale, machine-labelled bars, real-grid T4 vs flat-grid same-machine Colab 17.1× test) and Workload B scoring at E=100 (Python-loop tier extrapolated from K2=8 timings) splitting vectorisation gain from prefix-scan gain plus Colab T4 GPU.", out_dir, embed)}
   {_figure_html(out_dir / "what_speed_buys.png", "What a fixed 1-hour compute budget buys: linear scenarios/hour including Colab T4 GPU (left) and scoring draws per truth event per stratum with exact formula once the library exists (right).", out_dir, embed)}
   {_reshaping_ladder_html(out_dir)}
-  {_figure_html(out_dir / "reshaping_ladder.png", "What Reshaping Saves: full-experiment wall-clock ladder from 137 years (fully naive CPU) down to 5.6 hours (reshaped CPU) and 60.4 min (reshaped Colab T4 including 14.1 min of template gather/aggregation across 20 calls — MacBook-measured, Colab CPU in practice; replaced by measured total when T14+T17 logs land).", out_dir, embed)}
+  {_figure_html(out_dir / "reshaping_ladder.png", "What Reshaping Saves: full-experiment wall-clock ladder from 1. Naive down to 6. Use a GPU (including 14.1 min of template gather/aggregation across 20 calls — MacBook-measured, Colab CPU in practice; replaced by measured total when T14+T17 logs land). From row 2 onward most of the time is the one-at-a-time checking (about 2.5 years), which is why looking the waves up saves little until the checking itself is reshaped.", out_dir, embed)}
 </section>
 
 <section id="c4">
