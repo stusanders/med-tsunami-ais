@@ -18,6 +18,7 @@ Every stream codes against this file, not against another stream's unfinished co
 |---|---|---|
 | `backend.py`, `units.py`, `geometry.py`, `timeseries.py`, `config.py` | A | T00 (implemented now) |
 | `solver_reference.py`, `solver.py` | A | T02, T09 |
+| `synthetic.py` (stand-in grid and pool matching sections 2 and 4, for tests only) | A | T02 |
 | `observe.py`, `noise.py` | A | T12 |
 | `scoring.py` | A | T15 |
 | `baseline_detector.py` | A | T25 |
@@ -162,7 +163,7 @@ Count per area: `N_a ~ Poisson(sum of pool weight in area a)`, capped at the num
 solver_reference.run_reference(grid, eta0, sampler, cfg) -> rec30 (240, R, 3)    # one scenario, explicit loops over time
 solver_reference.step(eta, u, v, grid_ops, dt, g) -> (eta, u, v)                 # one forward-backward step
 
-solver.make_sampler(grid, pool) -> Sampler
+solver.make_sampler(grid, pool) -> Sampler     # implemented in solver_reference, re-exported by solver
 solver.Solver(grid, sampler, cfg)            # moves the masks and metrics to xp once
 solver.Solver.run(eta0) -> rec30 (B, 240, R, 3) xp array; eta0 is (B, ny, nx)
 solver.Solver.snapshots(eta0, times_s) -> (B, len(times_s), ny, nx) eta   # for figures
