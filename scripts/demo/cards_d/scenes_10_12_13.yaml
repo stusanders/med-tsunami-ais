@@ -1,0 +1,8 @@
+# Cited text for scenes 10, 12 and 13 (owner: T27 scenes 10/12/13 agent).
+# Every entry: text shown on screen + where it comes from.
+samos_consistency:
+  text: "Samos helped set the uplift rule, so\nthis is a consistency check, not an\nindependent test"
+  source: "outputs/pitch_outline.md, Slide 4 (consistency-check note: Samos 2020 motivated the change from 0.3 x slip to slip x sin(dip)); status/B.md (Sat ~21:10)"
+gpu_b64_oom:
+  text: "B = 64: out of GPU memory"
+  source: "status/B.md (Stream B, Sat ~21:10), T19 GPU tier: 'B=64 and B=128 ran out of memory' on the Colab Tesla T4, real 390x795 grid, full 20,063-receiver pool"

@@ -1,0 +1,42 @@
+# Text provenance for scenes 14 and 15 (T27). On-screen wording is docs/DEMO_SCRIPT.md (Stream A) scenes 14 and 15;
+# every number is read from data/outputs files at render time (see each scene's docstring). Not read by the scenes.
+
+s14_event:
+  text: "Samos, Mw 7.0"
+  source: "USGS event us7000c7y0 (https://earthquake.usgs.gov/earthquakes/eventpage/us7000c7y0/), via data/raw/historic/samos_2020_sources.json; Mw from outputs/demo_data/samos_meta.json source row"
+
+s14_recorded:
+  text: "Kos tide gauge: recorded and simulated"
+  source: "Recorded: IOC Sea Level Station Monitoring Facility, Kos (kos1), 1-min samples, de-tided with a 60-min centred rolling mean (data/raw/historic/ioc_samos_2020/; data/README.md section 3). Simulated: outputs/demo_data/samos_gauges.npz x green_factor of outputs/historic_samos_gauges.csv"
+
+s14_largest_wave:
+  text: "Largest wave at Kos: recorded {recorded_max_abs_m} cm, simulated about {simulated_max_abs_m x green_factor} cm"
+  source: "outputs/historic_samos_gauges.csv row kos1 (Stream B, T26; Green's-law depth correction, ratio_corrected)"
+
+s14_network:
+  text: "Ship drift network: not confirmed (X% of simulated days, the false-alarm level) / Ships with precise GPS: confirmed on X to Y% of days"
+  source: "outputs/historic_replays_summary.csv + historic_thresholds_arcs_plus_aegean.csv (Stream B, T26): samos_2020, arcs_plus_aegean, network, calm, 40 and 100 km"
+
+s14_caption:
+  text: "The simulated wave at Kos is about half the recorded one, within the factor of 2 we set. With today's ships, an earthquake of this size would not have been confirmed at sea."
+  source: "docs/DEMO_SCRIPT.md scene 14 (Stream A, main 996097d)"
+
+s15_limit_physics:
+  text: "The model is accurate offshore only, so ships in water under 50 m are ignored"
+  source: "PLAN.md section 6, item 5; config.yaml traffic.min_ship_depth_m"
+
+s15_limit_sources:
+  text: "Earthquake sources are simplified, and Samos helped set the rule for their size; real faults with other orientations (Amorgos, Samos) were much harder to detect than the catalogue suggests"
+  source: "PLAN.md section 6, items 6 and 14; config.yaml sources.uplift_rule comment; outputs/historic_replays.md (T26)"
+
+s15_limit_gps:
+  text: "The speed of precise GPS assumes the seafloor moves at once and that GPS noise stays at 5 cm in any weather"
+  source: "config.yaml gps.noise_sd_m (Foster and Thomas 2024 per PLAN.md); instantaneous uplift in the GPS operator"
+
+s15_limit_noise:
+  text: "Real Greek ship data was 17 to 21% less noisy than our calm setting, which suggests the drift results are, if anything, cautious"
+  source: "outputs/noise_check_piraeus.md (Stream A), column real_over_sim_calm 0.791 to 0.828"
+
+s15_next_step:
+  text: "Test the network on real AIS data during a future earthquake, and trial precise GPS on a few ships"
+  source: "docs/DEMO_SCRIPT.md scene 15 (Stream A)"

@@ -1,0 +1,156 @@
+# T27 demo: master citation cards (owner: scenes 2-3 agent).
+#
+# Every factual claim shown on screen that does not come from outputs/ or data/ lives here,
+# with its source. Scenes read this via common.load_cards() (merged with cards_d/*.yaml).
+# Entry format: key: {text: ..., source: "Author (year), venue, DOI/URL", ...extra fields}.
+# Verified against the primary source (abstract or full text) on 2026-11-21 unless marked otherwise.
+
+# --------------------------------------------------------------------------------------
+# Scene 1 & Scene 2 (Beat A): Mediterranean historical tsunami record
+# --------------------------------------------------------------------------------------
+med_tsunami_record:
+  rank: "3rd-largest"
+  count_label: "~225+ Mediterranean tsunamis (after Pacific & Atlantic)"
+  rate: "~1 major, destructive tsunami per century"
+  headline: "The Mediterranean has the 3rd-largest historical tsunami record in the world"
+  subline: "(after the Pacific and Atlantic) — roughly one major, destructive tsunami every 100 years."
+  source: "Maramai A., Brizuela B. & Graziani L. (2014/2019), Euro-Mediterranean Tsunami Catalogue (EMTC 2.0), INGV; EU Civil Protection Knowledge Network"
+
+# --------------------------------------------------------------------------------------
+# Scene 2: historic tsunamis (marker positions: lon/lat below, or the project's data file)
+# --------------------------------------------------------------------------------------
+hist_crete_365:
+  label: "AD 365"
+  place: "Crete"
+  text: "Western Crete lifted by up to 10 m; the tsunami drowned thousands from the Nile Delta to Dubrovnik"
+  lon: 23.6          # marker: western Crete, where Shaw et al. dated the uplift (not an epicentre)
+  lat: 35.35
+  source: "Shaw B. et al. (2008), Eastern Mediterranean tectonics and tsunami hazard inferred from the AD 365 earthquake, Nature Geoscience 1, 268-276, doi:10.1038/ngeo151"
+
+hist_messina_1908:
+  label: "1908"
+  place: "Messina"
+  text: "Mw 7.1; waves up to 12 m south of Messina and Reggio; 60,000 to over 100,000 dead"
+  lon: 15.6          # marker: Strait of Messina
+  lat: 38.2
+  source: "Pino N. A., Piatanesi A., Valensise G. & Boschi E. (2009), The 28 December 1908 Messina Straits earthquake (Mw 7.1), Seismological Research Letters 80(2), 243, doi:10.1785/gssrl.80.2.243"
+
+hist_amorgos_1956:
+  label: "1956"
+  place: "Amorgos"
+  text: "Mw 7.7; the largest Aegean tsunami of the 20th century, run-up up to 20 m on Amorgos"
+  position_file: "data/raw/historic/amorgos_1956_sources.json"   # recommended_for_replay lon/lat (Okal et al. 2009 relocation)
+  lon: 25.76
+  lat: 36.72
+  source: "Okal E. A., Synolakis C. E., Uslu B., Kalligeris N. & Voukouvalas E. (2009), The 1956 earthquake and tsunami in Amorgos, Greece, Geophys. J. Int. 178(3), 1533-1554, doi:10.1111/j.1365-246X.2009.04237.x"
+
+hist_samos_2020:
+  label: "2020"
+  place: "Samos"
+  text: "Mw 7.0; the largest Aegean tsunami since 1956, 2 m high in Vathy bay"
+  position_file: "data/raw/historic/samos_2020_sources.json"      # recommended_for_replay lon/lat (USGS us7000c7y0)
+  lon: 26.784
+  lat: 37.897
+  source: "Triantafyllou I. et al. (2021), The tsunami caused by the 30 October 2020 Samos (Aegean Sea) Mw 7.0 earthquake, J. Mar. Sci. Eng. 9(1), 68, doi:10.3390/jmse9010068"
+
+# --------------------------------------------------------------------------------------
+# Scene 2: how warnings work today, and the instruments
+# --------------------------------------------------------------------------------------
+warning_inferred:
+  text: "The alert is inferred from the earthquake"
+  source: "CAT-INGV procedure as reported for 23 Oct 2026: alert sent at 12:23, 4 min after the 12:19 quake (ilmeteo.net, L. Pasqualini, 26 Oct 2026, https://www.ilmeteo.net/notizie/attualita/terremoto-e-allerta-tsunami-cos-e-successo-il-23-ottobre-nel-tirreno-meridionale.html); PLAN.md"
+
+warning_confirmed:
+  text: "Confirmed or cancelled by coastal tide gauges"
+  source: "As above: the 23 Oct 2026 alert was cancelled once ISPRA tide gauges ruled out a tsunami (ilmeteo.net, 26 Oct 2026)"
+
+buoys_2025:
+  text: "First two deep-sea tsunami buoys in the Mediterranean, deployed 9-17 Sep 2025, about 100 km off eastern Sicily (3,200 m deep) and Calabria (2,600 m)"
+  short: "the first two Mediterranean deep-sea buoys (2025)"
+  label: "Deep-sea buoys (the first in the Mediterranean, {year})"   # scene 2 map label; {year} from data_file deployed_date
+  data_file: "data/raw/historic/ionian_buoys_2025.json"
+  source: "CAT-INGV (2025), First two deep-sea buoys for tsunami monitoring deployed in the Mediterranean Sea, https://cat.ingv.it/en/media-and-documents/news-en/486-first-two-deep-sea-buoys-for-tsunami-monitoring-deployed-in-the-mediterranean-sea; positions: data/raw/historic/ionian_buoys_2025.json (IIM Avvisi ai Naviganti 18.55/2026, 18.61/2026)"
+
+stromboli_buoy_2025:
+  text: "Coastal tsunami monitoring buoy offshore the Sciara del Fuoco, Stromboli, installed July 2025 by INGV (CME + CAT-INGV): surface buoy on an elastic electromechanical cable to a seafloor module (pressure sensor, hydrophone, accelerometer) at about 88 m depth"
+  label: "Coastal buoy at Stromboli ({year})"
+  year: 2025
+  lon: 15.185        # marker only: offshore the Sciara del Fuoco (NW flank); the abstract gives no coordinates
+  lat: 38.802
+  source: "Costanza A., Macaluso F., Fertitta G., Coltelli M., Lazzaro D., D'Agostino M., Lorito S., Amato A., Piatanesi A., Bruni S., Romano F., Abbate A., Cascone V. & Di Benedetto A. (2026), Deployment of a Multi-Parameter Volcanic Tsunami Monitoring System Offshore Sciara del Fuoco, Stromboli, EGU General Assembly 2026, EGU26-21354, https://meetingorganizer.copernicus.org/EGU26/EGU26-21354.html ('installed in July 2025 by INGV, offshore the Sciara del Fuoco'). Verified 2026-11-21"
+
+# --------------------------------------------------------------------------------------
+# Scene 2: 23 October 2026, southern Tyrrhenian (Palermo / Trapani). Local times CEST.
+# Verified against press reports citing INGV and the INGV catalogue; the CAT-INGV message
+# archive itself was not reachable, so alert/cancel times rest on the ilmeteo.net account.
+# --------------------------------------------------------------------------------------
+palermo_quake:
+  time: "12:19"
+  date: "23 October 2026"
+  mw: 5.5
+  place: "off Alicudi"
+  heading: "{date}, Mw {mw:.1f} {place}"   # scene 2 Palermo panel heading (DEMO_SCRIPT.md wording)
+  text: "Mw 5.5 earthquake, about 30 km NW of Alicudi"
+  lon: 14.1717
+  lat: 38.7938
+  source: "INGV earthquake catalogue, event 47606532, 2026-10-23 10:19:15 UTC, 38.794 N 14.172 E, depth 8.8 km, Mw 5.5, https://terremoti.ingv.it/event/47606532 (USGS us6000u4bk gives Mww 5.7)"
+
+palermo_alert:
+  time: "12:23"
+  label: "Tsunami alert issued"
+  text: "Tsunami alert from INGV's Tsunami Alert Centre (orange level from 12:29)"
+  source: "ilmeteo.net, L. Pasqualini (26 Oct 2026), Terremoto e allerta tsunami, cos'e' successo il 23 ottobre nel Tirreno meridionale?, https://www.ilmeteo.net/notizie/attualita/terremoto-e-allerta-tsunami-cos-e-successo-il-23-ottobre-nel-tirreno-meridionale.html"
+
+palermo_evac:
+  time: ""
+  label: "Schools in Palermo evacuated"   # DEMO_SCRIPT.md says "Schools in Palermo and Trapani evacuated"; sources confirm schools in Palermo (and Bagheria, Messina, Lipari) but in Trapani only the courthouse
+  text: "Schools evacuated in Palermo; Trapani courthouse evacuated"
+  source: "pasqualepillitteri.it (23 Oct 2026), https://pasqualepillitteri.it/en/news/26525/aeolian-islands-earthquake-magnitude-5-5-tsunami-alert-sicily (Trapani courthouse per ANSA); Orizzonte Scuola (23 Oct 2026), https://www.orizzontescuola.it/terremoto-di-magnitudo-5-0-nel-tirreno-meridionale-scossa-avvertita-in-sicilia-evacuate-le-scuole-a-palermo-e-bagheria/; To Vima (23 Oct 2026), https://www.tovima.com/world/tsunami-alert-in-italy-after-12-earthquakes-strike-off-sicily/"
+
+palermo_lifted:
+  time: "13:22"
+  label: "Alert lifted once tide gauges showed no change"
+  text: "Alert cancelled: tide gauges showed no tsunami"
+  source: "ilmeteo.net, L. Pasqualini (26 Oct 2026), as palermo_alert: 'I primi riscontri, arrivati dai mareografi ISPRA di Strombolicchio e Ginostra, hanno consentito di escludere uno tsunami in corso'"
+
+# --------------------------------------------------------------------------------------
+# Scene 3: previous work
+# --------------------------------------------------------------------------------------
+inazu2020:
+  title: "Inazu et al. (2020)"
+  cite: "Inazu et al. (2020)"
+  venue: "Earth, Planets and Space"
+  lines:
+    - "Real AIS from 13 ships, Japan 2011"
+    - "Sideways drift tracked the tsunami currents"
+    - "Fit to simulated currents:\nr = 0.72, or 0.78 after yaw correction"
+    - "One-ship limit about 0.1–0.3 m/s (3σ)"
+  n_ships: 13
+  r_raw: 0.72
+  r_yaw: 0.78
+  limit_m_s: "0.1–0.3"
+  event_year: 2011     # 2011 Tohoku tsunami, the event Inazu et al. analyse (title/abstract)
+  event_mw: 9.0        # JMA moment magnitude of the 11 March 2011 off the Pacific coast of Tohoku earthquake
+  event_mw_source: "Japan Meteorological Agency, Information on 2011 Earthquake, https://www.jma.go.jp/jma/en/2011_Earthquake/Information_on_2011_Earthquake.html ('Magnitude: 9.0'; JMA data page gives 9.0 moment magnitude). USGS later revised to M 9.1. Verified 2026-11-21"
+  source: "Inazu D., Ikeya T., Iseki T. & Waseda T. (2020), Extracting clearer tsunami currents from shipborne AIS data using ship yaw and equation of ship response, Earth Planets Space 72:41, doi:10.1186/s40623-020-01165-7 (13 ships: Fig. 1/Table 1; mean r 0.72 -> 0.78: p. 7-8; 'three-sigma limits ... 0.1-0.3 m/s': p. 11)"
+
+hossen2021:
+  title: "Hossen et al. (2021)"
+  cite: "Hossen et al. (2021)"
+  venue: "Earth and Space Science"
+  lines:
+    - "Simulated tsunamis off Cascadia"
+    - "GPS height recovered the wave; ship speed alone could not"
+  vis_labels: ["GPS height", "Speed"]
+  source: "Hossen M. J., Mulia I. E., Mencin D. & Sheehan A. F. (2021), Data assimilation for tsunami forecast with ship-borne GNSS data in the Cascadia subduction zone, Earth and Space Science 8(3), e2020EA001390, doi:10.1029/2020EA001390"
+
+foster_thomas:
+  title: "Foster & Thomas (2025)"
+  cite: "Foster and Thomas (2025)"   # on-screen form; DEMO_SCRIPT.md says 2024, the verified abstract is EGU25 (2025)
+  venue: "EGU General Assembly"
+  venue_short: "EGU 2025 conference abstract"
+  lines:
+    - "Precise ship GPS tracks sea height in the open ocean"
+    - "Ships often first in position; proposes a volunteer cargo-ship network"
+  source: "Foster J. & Thomas B. (2025), Real-time contribution of ship-based GNSS to tsunami warning, EGU General Assembly 2025, EGU25-9689, doi:10.5194/egusphere-egu25-9689. (PLAN.md cites 'Foster and Thomas 2024'; the verified 2024 items are Thomas, Foster & Louartani (2024), Int. Hydrogr. Rev. 30(1), doi:10.58440/ihr-30-1-a05, and Foster et al., EGU24-5841)"
+

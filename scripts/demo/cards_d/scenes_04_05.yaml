@@ -1,0 +1,38 @@
+# Cited text for scenes 4 (Ships as sensors) and 5 (Real inputs, simulated events).
+# Read with common.load_cards(). Dataset provenance follows data/README.md.
+
+s04_drift_concept:
+  text: "AIS heading vs course over ground as a current meter (Inazu et al. 2020)"
+  source: "Inazu et al. (2020), Earth, Planets and Space 72:41, doi:10.1186/s40623-020-01165-7 (as cited in outputs/yaw_correction.md)"
+
+s04_long_wave:
+  text: "Linear long wave: current = wave height x sqrt(g / depth)"
+  source: "Linear shallow-water wave theory: u = c*eta/h with c = sqrt(g*h); the same equations as the project solver (docs/interfaces.md section 3)"
+
+s05_gebco:
+  text: "Seafloor depth"
+  detail: "GEBCO 2026, 15 arc-sec, gridded to 2 arc-min"
+  source: "GEBCO Compilation Group (2026), GEBCO_2026 Grid, doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa (data/README.md row 1)"
+
+s05_emodnet:
+  text: "Ship traffic"
+  detail: "EMODnet merchant vessel density 2024"
+  source: "EMODnet Human Activities, Vessel Density, record 0f2f3ff1-30ef-49e1-96e7-8ca78d58a07c, types 8+9+10, 2024 (data/README.md row 2c)"
+
+s05_efsm20:
+  text: "Fault geometry"
+  detail: "EFSM20 subduction interfaces"
+  source: "Basili et al. (2024), EFSM20 3D triangular meshes, INGV, doi:10.13127/efsm20/meshes (data/README.md, arc geometry update)"
+
+s05_gauges:
+  text: "Gauges and buoys"
+  detail: "IOC sea-level stations, 2 CAT-INGV Ionian buoys (2025)"
+  source: "IOC Sea Level Station Monitoring Facility, ioc-sealevelmonitoring.org station list (data/README.md row 5); CAT-INGV Ionian buoys deployed Sept 2025 (data/README.md T26a section 4)"
+
+s05_piraeus:
+  text: "Piraeus AIS (real, Oct 2017)"
+  source: "University of Piraeus AIS dataset, Zenodo doi:10.5281/zenodo.5562629 (data/README.md row 3a)"
+
+s05_inazu:
+  text: "Inazu et al. noise levels"
+  source: "Inazu et al. (2020), Earth, Planets and Space 72:41, doi:10.1186/s40623-020-01165-7; values in config.yaml ais_noise"

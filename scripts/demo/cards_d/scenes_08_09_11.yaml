@@ -1,0 +1,7 @@
+# Cited text for scenes 8, 9 and 11 (owner: showcase agent). Read with common.load_cards().
+s09_single_ship_rule:
+  text: "Single-ship 3σ rule (Inazu et al. 2020)"
+  source: "Inazu D., Ikeya T., Iseki T. & Waseda T. (2020), Extracting clearer tsunami currents from shipborne AIS data using ship yaw and equation of ship response, Earth Planets Space 72:41, doi:10.1186/s40623-020-01165-7 ('three-sigma limits', p. 11); implemented as baseline_detector.literal_alarm_minute (T25)"
+s11_single_ship_rule:
+  text: "Inazu's rule: one ship's drift over 3σ of its own noise"
+  source: "Inazu D., Ikeya T., Iseki T. & Waseda T. (2020), Earth Planets Space 72:41, doi:10.1186/s40623-020-01165-7 (p. 11); config single_ship.literal_k_sigma"

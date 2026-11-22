@@ -1,0 +1,27 @@
+# Cited text for scenes 6 (How the simulation works) and 7 (The reshaping).
+# Read with common.load_cards(). Numbers are NOT stored here: scenes read them from outputs/, data/ or config.yaml.
+
+s06_long_wave_rules:
+  text: "Linear long-wave (shallow-water) equations: water piles up where more flows in than out; water flows from high to low"
+  detail: "d(eta)/dt = -div(h u),  du/dt = -g grad(eta)"
+  source: "Linear shallow-water equations as implemented by the project solver (docs/interfaces.md section 3; PLAN.md)"
+
+s06_uplift_rule:
+  text: "Seafloor uplift = slip x sin(mean fault dip); the sea surface copies the uplift instantly"
+  source: "Project source model, src/tsunami/sources.py (uplift_factor, source_eta0); mean dips from EFSM20 (Basili et al. 2024, doi:10.13127/efsm20/meshes)"
+
+s06_single_ship_rule:
+  text: "Single-ship rule: alarm when one ship's cleaned drift exceeds k times its own noise"
+  source: "Inazu et al. (2020), Earth, Planets and Space 72:41, doi:10.1186/s40623-020-01165-7 (k = single_ship.literal_k_sigma in config.yaml)"
+
+s06_gauges:
+  text: "Tide gauges"
+  source: "IOC Sea Level Station Monitoring Facility station list, ioc-sealevelmonitoring.org (data/README.md row 5)"
+
+s06_buoys:
+  text: "Deep-sea buoys (CAT-INGV, Ionian Sea, deployed 2025)"
+  source: "CAT-INGV MEET project buoys INGV01/INGV02, deployed Sept 2025 (data/README.md T26a section 4)"
+
+s07_linearity:
+  text: "Because the equations are linear, the response to any earthquake can be simulated once and reused"
+  source: "Solver validation T11 check 4, linearity and superposition (outputs/validation.md)"
