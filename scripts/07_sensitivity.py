@@ -141,7 +141,7 @@ dfg = pd.concat(fr, ignore_index=True)
 record("gaps_10pct", dfg, truth, note=f"{S['gap_frac']:.0%} reports dropped; thresholds recalibrated on {len(cal_idx)} cal draws")
 
 # ---- monopole truth (informative events): new solver runs on this runtime
-mono = truth_info.copy()
+mono = truth_info.merge(pd.read_csv(tlib_dir / "uplift_scale.csv")[["run_id", "uplift_dip_deg"]], on="run_id")   # new-rule amplitude: slip x sin(uplift dip)
 mono["kind"] = "monopole"
 mono["run_id"] = np.arange(len(mono))
 mono_dir = repo_path("data/truth_monopole")

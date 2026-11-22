@@ -104,7 +104,15 @@ def stage_replay():
     frames = []
     for name, rows in catalogues.items():
         sub = cand.iloc[rows].reset_index(drop=True)
-        tdf, thr = SW.thresholds(SW.quiet_stats(cache, SW.quiet_tag(quiet), qfleets, quiet, pool, cfg, cand, rows=rows), cfg)
+        if len(rows) == len(cand) and (out / "thresholds.csv").exists():
+            # the full catalogue is the one the sweep calibrated: reuse its thresholds instead of recomputing them
+            tdf = pd.read_csv(out / "thresholds.csv")
+            thr = {}
+            for r in tdf.itertuples():
+                thr.setdefault((r.operator, r.range_cap_m, r.regime), {})[r.detector] = r.threshold
+        else:
+            tdf, thr = SW.thresholds(SW.quiet_stats(cache, SW.quiet_tag(quiet), qfleets, quiet, pool, cfg, cand, rows=rows), cfg)
+        tdf = tdf.copy()
         tdf.insert(0, "catalogue", name)
         tdf.to_csv(out / f"historic_thresholds_{name}.csv", index=False)
         combos = list(itertools.product(range(len(efleets)), sorted(cfg["traffic"]["range_caps_m"]), cfg["operators"], cfg["weather_regimes"]))
