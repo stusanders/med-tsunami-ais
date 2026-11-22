@@ -103,7 +103,7 @@ SCENES = {s.num: s for s in [
     SceneSpec(8, "tsunami_crosses", "Simulation", "Hellenic Arc, Mw 8.6: only ships in medium-depth water feel the wave above their noise", 20, 20),
     SceneSpec(9, "network_confirms", "Results", "Result: the ship network detects the tsunami, but later than tide gauges",
               20, 20),
-    SceneSpec(16, "precise_gps", "Results", "Ships above the source rise with the seafloor, so precise GPS beats tide gauges", 13, 13, "09b"),
+    SceneSpec(16, "precise_gps", "Results", "If we add historic precise height GPS data, detection speed increases massively", 13, 13, "09b"),
     SceneSpec(17, "not_always", "Simulation", "With no ships on the shallow Cretan shelf, a Mw 8.1 tsunami goes unconfirmed", 13, None, "09c"),
     SceneSpec(10, "is_it_right", "Results", "Verified: solver matches Samos 2020 gauges; detector recovers planted quakes", 20, 20),
     SceneSpec(11, "one_vs_network", "Results", "Comparison with previous work: networking the fleet cuts false alarms to about 1 in 100 days", 11, 11),

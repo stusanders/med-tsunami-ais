@@ -3,7 +3,7 @@
 Focus is split cleanly between the two key result charts:
   1. Top chart: Evidence from the whole fleet (how well ship drift matches the tsunami wave), relative to the
      1% false-alarm threshold, plus the location accuracy badge (places the source within ~13 km).
-  2. Bottom chart: Time taken to confirm the tsunami on a typical day (Ship network vs First tide gauge vs First buoy).
+  2. Bottom chart: Time taken to confirm the tsunami on a typical day (Ship network vs 3 tide gauges agree vs First buoy).
 """
 import common as cm
 import matplotlib
@@ -104,25 +104,26 @@ def build(cut, ctx):
     fig.text(0.04, 0.34, "2. Time taken to confirm the tsunami (typical day)",
              fontsize=cm.FS_H2 - 2, color=cm.TEXT, weight="bold", ha="left", va="center")
     fb = gau.get("first_buoy_s")
+    third_g = float(typ["third_gauge_med_min"])
     rows = [("Ship network", typ_conf, cm.C["network"], f"{st.fmt_min(typ_conf)} min"),
-            ("First tide gauge", float(typ["first_gauge_med_min"]), cm.C["gauge"],
-             f"{st.fmt_min(float(typ['first_gauge_med_min']))} min")]
+            ("3 tide gauges agree", third_g, cm.C["gauge"],
+             f"{st.fmt_min(third_g)} min")]
     if fb is not None:
         rows.append(("First buoy", fb / 60.0, cm.C["buoy"], f"{st.fmt_min(fb / 60.0)} min"))
     else:
         rows.append(("First buoy", None, cm.C["buoy"], "none within 2 hours"))
-    axt = fig.add_axes((0.20, 0.11, 0.76, 0.195))
+    axt = fig.add_axes((0.22, 0.11, 0.74, 0.195))
     axt.set_xlim(0, 120); axt.set_ylim(-0.6, 2.6)
     axt.set_yticks([]); axt.set_xticks([])
     for sp in axt.spines.values():
         sp.set_visible(False)
     tl_axis = axt.axvline(0, color=cm.FAINT, lw=1.4, alpha=0)
-    fig.text(0.96, 0.34, "Ship network and tide gauge: median day. Buoy: the single run shown above.",
-             fontsize=cm.FS_LABEL - 1, color=cm.MUTED, ha="right", va="center")
+    fig.text(0.96, 0.342, "Ship network and tide gauges: median day (gauges: 3rd gauge to trigger).\nBuoy: the single run shown above.",
+             fontsize=cm.FS_LABEL - 1, color=cm.MUTED, ha="right", va="center", linespacing=1.25)
     bars = []
     for r, (name, mm, col, txt) in enumerate(rows):
         y = 2 - r
-        lab = fig.text(0.185, 0.11 + 0.195 * (y + 0.6) / 3.2, name, fontsize=cm.FS_BODY, color=col, weight="bold",
+        lab = fig.text(0.205, 0.11 + 0.195 * (y + 0.6) / 3.2, name, fontsize=cm.FS_BODY, color=col, weight="bold",
                        ha="right", va="center", alpha=0)
         bar = axt.barh([y], [0], height=0.62, color=col, alpha=0)
         inside = False                     # every value label sits outside its bar, same style

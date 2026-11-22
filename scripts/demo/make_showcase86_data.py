@@ -145,16 +145,22 @@ def choose(net, truth):
     return out
 
 
-def typical(net, truth):
+def typical(net, truth, gtrig=None):
     t = truth.set_index("run_id")
     d = net.join(t[["region"]], on="run_id")
     s = d[(d.run_kind == "truth_map2") & (d.region == "hellenic") & np.isclose(d.truth_mw, 8.6)]
     a, g = s[s.operator == "ais"], s[s.operator == "gps"]
+    if gtrig is None:
+        gtrig = pd.read_parquet(SWEEP / "gauge_triggers.parquet")
+    g3 = (gtrig[gtrig.rtype == 1].sort_values(["run_id", "trigger_s"])
+          .groupby("run_id").nth(2).set_index("run_id")["trigger_s"])
+    third_gauge_med_min = float(a[["run_id"]].join(g3.rename("third_s"), on="run_id")["third_s"].median() / 60)
     return dict(
         definition="outputs/sweep/part_*_40000_*_calm.parquet, detector network, hellenic truth_map2 Mw 8.6; medians over detected trials",
         n_trials_ais=int(len(a)), n_trials_gps=int(len(g)),
         ais_det_frac=float(a.detected.mean()), ais_med_confirm_min=float(a[a.detected].confirm_s.median() / 60),
         ais_med_loc_km=float(a[a.detected].loc_err_m.median() / 1e3), first_gauge_med_min=float(a.first_gauge_s.median() / 60),
+        third_gauge_med_min=third_gauge_med_min,
         gps_det_frac=float(g.detected.mean()), gps_med_confirm_min=float(g[g.detected].confirm_s.median() / 60),
         gps_med_loc_km=float(g[g.detected].loc_err_m.median() / 1e3))
 
@@ -477,7 +483,7 @@ def main():
                           "data/truth/uplift_scale.csv", "data/processed/candidates.csv", "data/processed/receiver_pool.npz",
                           "data/processed/grid.npz", "../med-tsunami-ais/config.yaml"]
     choice = choose(net, truth)
-    typ = typical(net, truth)
+    typ = typical(net, truth, gtrig)
     log("typical:", typ)
 
     seeds = sorted({s["traffic_seed"] for s in TRIALS.values()})
