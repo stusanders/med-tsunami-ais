@@ -264,7 +264,8 @@ def new_figure(num: int, caption: str | None = None, show_title: bool = True):
     chrome = {}
     chrome["section"] = fig.text(0.025, 0.955, spec.section.upper(), fontsize=FS_LABEL,
                                  color=MUTED, weight="bold", va="center", ha="left")
-    chrome["num"] = fig.text(0.975, 0.955, spec.tag, fontsize=FS_LABEL, color=FAINT,
+    display_num = f"{ORDER.index(num) + 1:02d}" if num in ORDER else spec.tag
+    chrome["num"] = fig.text(0.975, 0.955, display_num, fontsize=FS_LABEL, color=FAINT,
                              weight="bold", va="center", ha="right")
     if show_title:
         chrome["title"] = fig.text(0.025, 0.905, spec.title, fontsize=FS_TITLE, color=TEXT,

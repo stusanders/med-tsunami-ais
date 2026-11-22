@@ -213,7 +213,7 @@ def build(cut, ctx):
         if T["A"] is not None and t < tB - 0.15:
             chrome["title"].set_text("Mediterranean: 3rd-largest tsunami record (~1 major event/century)")
         elif t < tC - 0.15:
-            chrome["title"].set_text("Where current locators are")
+            chrome["title"].set_text("Where current instruments are")
         else:
             chrome["title"].set_text("Without offshore sensors, seismic alerts cannot be confirmed at sea")
         a_leg = cm.fade(t, t_g, dur=0.5) * (1 - cm.ramp(t, tC, tC + 0.5))

@@ -31,7 +31,7 @@ REGIME = "calm"
 MW_MIN = 8.0
 
 CAPTION = ("Wave solver matches benchmarks & Samos 2020 gauges; detector recovers planted quakes and stays calibrated on quiet days.")
-H_PHYS, H_DET = "1. Verified the wave physics", "2. Verified the fleet detector"
+H_PHYS, H_DET = "1. Wave physics (7/7 checks pass; highlights)", "2. Verified the fleet detector"
 PHYS = [(1, "Wave arrival matches analytical theory"), (2, "Mass conserved (no water created or lost)"),
         (3, "Green's law coastal amplification holds"), ("gpu", "GPU solver matches CPU bit-for-bit")]
 
@@ -121,8 +121,8 @@ def build(cut, ctx):
         return artist
 
     XL, XR = 0.035, 0.525
-    show(fig.text(XL, 0.815, H_PHYS, fontsize=cm.FS_H2 - 1, weight="bold", color=cm.TEXT, va="center"), 0.4)
-    show(fig.text(XR, 0.815, H_DET, fontsize=cm.FS_H2 - 1, weight="bold", color=cm.TEXT, va="center"), 0.4)
+    show(fig.text(XL, 0.815, H_PHYS, fontsize=cm.FS_H2 - 3, weight="bold", color=cm.TEXT, va="center"), 0.4)
+    show(fig.text(XR, 0.815, H_DET, fontsize=cm.FS_H2 - 3, weight="bold", color=cm.TEXT, va="center"), 0.4)
     show(fig.add_artist(Line2D([0.50, 0.50], [0.11, 0.835], transform=fig.transFigure, color=cm.FAINT, lw=1.2)),
          0.3)
 

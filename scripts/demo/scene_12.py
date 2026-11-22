@@ -29,8 +29,8 @@ SCENE = 12
 TICK_FONT = "DejaVu Sans"
 YEAR_S = 365.25 * 86400.0
 
-CAPTION = ("Reshaping the problem turns years into hours, while the GPU turns hours into minutes,\n"
-           "which allowed the whole experiment to be rerun each time an assumption was corrected.")
+CAPTION = ("Reshaping cuts ~3 years to 5.6 hours on a laptop; moving to a GPU brings the full run to ~1 hour,\n"
+           "allowing the whole experiment to be rerun each time an assumption was corrected.")
 HEADING = "Time to run the full experiment"
 RUNGS = [(2, "The straightforward way, on a laptop:", "cpu"), (5, "Reshaped, on a laptop:", "cpu"),
          (6, "Reshaped, on a GPU:", "gpu")]                       # (reshaping_ladder.json row, label, colour key)
@@ -112,14 +112,21 @@ def build(cut, ctx):
             show(fig.add_artist(Line2D([x, x], [yb - 0.04, yb + 0.01], transform=fig.transFigure,
                                        color=cm.FAINT, lw=1.2, ls=(0, (3, 3)), zorder=2)), 1.4 + 3.0 * k)
         show(fig.text(x, y_ax - 0.01, txt, fontsize=cm.FS_LABEL, color=cm.MUTED, ha="center", va="top"), 1.2)
+    show(fig.text(BX + BW / 2, y_ax - 0.048, "Total runtime (log scale)", fontsize=cm.FS_LABEL - 1, color=cm.MUTED, ha="center", va="top",
+                  style="italic"), 1.2)
 
-    # small label
+    # small verification & speedup clarification label (distinguishing end-to-end vs solver kernel)
     parts = []
     if same_answers():
-        parts.append("Same code and same answers on the CPU and the GPU")
+        parts.append("Same answers on CPU & GPU")
+    r5, r6 = rows.get(5), rows.get(6)
+    if r5 is not None and r6 is not None:
+        e2e = float(r5["total_s"]) / float(r6["total_s"])
+        io_m = float(r6.get("agg_s", 0.0)) / 60.0
+        parts.append(f"{e2e:.1f}× faster end-to-end (incl. {io_m:.0f} min CPU I/O)")
     sp = same_machine_speedup()
     if sp is not None:
-        parts.append(f"{sp:.0f} times faster on the same machine")
+        parts.append(f"{sp:.0f}× faster solver kernel on same Colab machine")
     if parts:
         t_s = 11.0
         y_s = 0.155
@@ -127,7 +134,7 @@ def build(cut, ctx):
                                           color=cm.C["good"], mew=0)), t_s)
         show(fig.text(BX + 0.011, y_s, "✓", ha="center", va="center", fontsize=cm.FS_SMALL - 2, color=cm.BG,
                       weight="bold", family=TICK_FONT), t_s)
-        show(fig.text(BX + 0.03, y_s, "; ".join(parts), fontsize=cm.FS_SMALL, color=cm.TEXT, va="center"), t_s)
+        show(fig.text(BX + 0.03, y_s, " · ".join(parts), fontsize=cm.FS_SMALL - 1, color=cm.TEXT, va="center"), t_s)
 
     for k in ("title", "section", "num"):
         chrome[k].set_alpha(0)
