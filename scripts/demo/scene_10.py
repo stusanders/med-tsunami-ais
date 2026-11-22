@@ -2,10 +2,14 @@
 
 Left: Wave physics verification (4 automated benchmark checks + Samos 2020 8-gauge log-log scatter).
 Right: Visual fleet detector verification:
-  * Test A — Planted-tsunami recovery (twin trials): epicentre bullseye (15 km median error) +
-    True vs Recovered magnitude 1:1 scatter (±0.04 Mw median error).
+  * Context note explaining why no real Med AIS tsunami record exists (~2004+; Kos 2017 & Samos 2020
+    are below threshold) and the three-part validation (physics vs Samos, noise vs Piraeus AIS,
+    algorithm vs planted events).
+  * Test A — Planted-tsunami recovery (twin trials): epicentre bullseye (15 km median error; dot
+    distance is real, angle random) + True vs Recovered magnitude 1:1 scatter (Mw < 7.5 greyed out
+    near false-alarm floor; ±0.04 Mw overall median error, 90% within ±0.2).
   * Test B — Quiet-day false-alarm calibration: measured false-alarm rate across 500 unseen quiet
-    days vs the 1% target threshold (0.2–1.6%).
+    days vs the 1% target threshold (AIS 100 km comes out at 1.6%).
 """
 import os
 import re
@@ -90,7 +94,6 @@ def detector_numbers():
             out["far_lo"] = float(ha.far_hold.min())
             out["far_hi"] = float(ha.far_hold.max())
             out["far_target"] = float(ha.far_cal.iloc[0])
-            # Distinct holdout checks by sensor/range config
             a40 = ha[np.isclose(ha.range_cap_m, 40000.0)]
             a100 = ha[np.isclose(ha.range_cap_m, 100000.0)]
             g40 = hn[(hn.operator == "gps") & np.isclose(hn.range_cap_m, 40000.0)]
@@ -101,6 +104,7 @@ def detector_numbers():
                 rows.append(("Precise GPS", float(g40.far_hold.mean()), cm.C["gps"]))
             if len(a100):
                 rows.append(("AIS drift (100 km cap)", float(a100.far_hold.mean()), cm.C["signal"]))
+                out["far_a100"] = float(a100.far_hold.mean())
             out["far_rows"] = rows
     return out
 
@@ -117,9 +121,9 @@ def build(cut, ctx):
         return artist
 
     XL, XR = 0.035, 0.525
-    show(fig.text(XL, 0.805, H_PHYS, fontsize=cm.FS_H2 - 1, weight="bold", color=cm.TEXT, va="center"), 0.4)
-    show(fig.text(XR, 0.805, H_DET, fontsize=cm.FS_H2 - 1, weight="bold", color=cm.TEXT, va="center"), 0.4)
-    show(fig.add_artist(Line2D([0.50, 0.50], [0.11, 0.83], transform=fig.transFigure, color=cm.FAINT, lw=1.2)),
+    show(fig.text(XL, 0.815, H_PHYS, fontsize=cm.FS_H2 - 1, weight="bold", color=cm.TEXT, va="center"), 0.4)
+    show(fig.text(XR, 0.815, H_DET, fontsize=cm.FS_H2 - 1, weight="bold", color=cm.TEXT, va="center"), 0.4)
+    show(fig.add_artist(Line2D([0.50, 0.50], [0.11, 0.835], transform=fig.transFigure, color=cm.FAINT, lw=1.2)),
          0.3)
 
     # ---------------------------------------------------------- left: physics checks
@@ -128,7 +132,7 @@ def build(cut, ctx):
     ok = {k: bool(st.get(k)) for k in (1, 2, 3)}
     ok["gpu"] = bool(st.get(5)) and gpu is not None and "passed" in str(gpu.get("pytest", ""))
     for k, (key, txt) in enumerate(PHYS):
-        y = 0.735 - k * 0.054
+        y = 0.745 - k * 0.054
         t0 = 1.0 + 0.5 * k
         if ok[key]:
             show(fig.add_artist(Line2D([XL + 0.012], [y], transform=fig.transFigure, marker="o", ms=22, ls="",
@@ -183,19 +187,30 @@ def build(cut, ctx):
     loc_km = det.get("loc_km", 15.0)
     mw_err = det.get("mw_err", 0.04)
     w02 = 100 * det.get("within_02", 0.90)
-    far_lo = 100 * det.get("far_lo", 0.002)
-    far_hi = 100 * det.get("far_hi", 0.016)
     far_tgt = 100 * det.get("far_target", 0.01)
+    far_a100 = 100 * det.get("far_a100", det.get("far_hi", 0.016))
 
-    # Top-right card: Test A — Planted-tsunami recovery (epicentre bullseye + Mw 1:1 scatter)
-    t_d1 = 6.2
-    dcard1 = cm.card(fig, (XR, 0.405, 0.44, 0.365))
+    # Context note explaining why real Med AIS tsunami tests do not exist + three-part validation
+    t_note = 5.4
+    ncard = cm.card(fig, (XR, 0.695, 0.445, 0.095), edgecolor=cm.C["moderate"], lw=1.5, radius=0.08)
+    show(ncard.patches[0], t_note)
+    note_txt = (
+        "No detectable Med tsunami exists in AIS records (~2004+); Kos 2017 & Samos 2020 are\n"
+        "below threshold. So we test each part separately: wave physics vs Samos tide gauges,\n"
+        "ship noise vs real Piraeus AIS, and the detector algorithm against planted events."
+    )
+    show(ncard.text(0.025, 0.50, note_txt, fontsize=cm.FS_LABEL - 2.5, color=cm.TEXT,
+                    va="center", ha="left", linespacing=1.28), t_note + 0.15)
+
+    # Middle-right card: Test A — Planted-tsunami recovery (epicentre bullseye + Mw 1:1 scatter)
+    t_d1 = 6.6
+    dcard1 = cm.card(fig, (XR, 0.355, 0.445, 0.325))
     show(dcard1.patches[0], t_d1)
-    show(dcard1.text(0.035, 0.91, "Test A: Planted-tsunami recovery (hide known quake in noisy AIS)",
+    show(dcard1.text(0.03, 0.915, "Test A: Planted-tsunami recovery (hide known quake in noisy AIS)",
                      fontsize=cm.FS_LABEL + 1, weight="bold", color=cm.TEXT, va="center"), t_d1)
 
-    # Left half of Test A: Epicentre bullseye using real AIS twin loc_err_m distribution
-    t_ax = fig.add_axes((XR + 0.02, 0.485, 0.165, 0.23))
+    # Left half of Test A: Epicentre bullseye (real radial distances; random direction)
+    t_ax = fig.add_axes((XR + 0.02, 0.445, 0.16, 0.19))
     t_ax.set_xlim(-38, 38); t_ax.set_ylim(-38, 38); t_ax.set_aspect("equal"); t_ax.axis("off")
     for rad, ls, col in ((32, "--", cm.FAINT), (loc_km, "-", cm.C["network"])):
         c = t_ax.add_patch(mpatches.Circle((0, 0), rad, fc=cm.C["network"] if rad == loc_km else "none",
@@ -215,47 +230,48 @@ def build(cut, ctx):
     else:
         rr = rng.uniform(5.0, loc_km * 1.4, size=24)
     ang = rng.uniform(0, 2 * np.pi, size=len(rr))
-    show(t_ax.scatter(rr * np.cos(ang), rr * np.sin(ang), s=22, color=cm.C["network"], edgecolors=cm.BG,
+    show(t_ax.scatter(rr * np.cos(ang), rr * np.sin(ang), s=20, color=cm.C["network"], edgecolors=cm.BG,
                       lw=0.5, zorder=5), t_d1 + 0.6, 0.85)
-    show(t_ax.scatter([0], [0], marker="*", s=220, color=cm.C["source"], edgecolors=cm.BG, lw=0.7, zorder=6), t_d1 + 0.5)
-    show(dcard1.text(0.23, 0.145, f"Epicentre error: {loc_km:.0f} km median", ha="center", va="center",
+    show(t_ax.scatter([0], [0], marker="*", s=200, color=cm.C["source"], edgecolors=cm.BG, lw=0.7, zorder=6), t_d1 + 0.5)
+    show(dcard1.text(0.225, 0.195, f"Epicentre error: {loc_km:.0f} km median", ha="center", va="center",
                      fontsize=cm.FS_LABEL - 1, color=cm.C["network"], weight="bold"), t_d1 + 0.7)
-    show(dcard1.text(0.23, 0.065, "Star = true fault · dots = fleet estimates", ha="center", va="center",
-                     fontsize=cm.FS_LABEL - 3, color=cm.MUTED), t_d1 + 0.7)
+    show(dcard1.text(0.225, 0.075, "dots = fleet estimates\n(distance from true epicentre)", ha="center", va="center",
+                     fontsize=cm.FS_LABEL - 3, color=cm.MUTED, linespacing=1.15), t_d1 + 0.7)
 
-    # Right half of Test A: True Mw vs Recovered Mw 1:1 scatter (mirrors Samos check on the left!)
-    m_ax = fig.add_axes((XR + 0.235, 0.505, 0.185, 0.21))
+    # Right half of Test A: True Mw vs Recovered Mw 1:1 scatter (Mw < 7.5 greyed out near false-alarm floor)
+    m_ax = fig.add_axes((XR + 0.24, 0.445, 0.185, 0.185))
     m_ax.set_facecolor("none")
-    m_ax.set_xlim(6.9, 8.65); m_ax.set_ylim(6.9, 8.65)
+    m_ax.set_xlim(6.7, 8.65); m_ax.set_ylim(6.9, 8.65)
     m_ax.set_xticks([7.0, 7.5, 8.0, 8.5]); m_ax.set_yticks([7.0, 7.5, 8.0, 8.5])
     m_ax.tick_params(labelsize=cm.FS_LABEL - 2, colors=cm.MUTED, length=3)
     m_ax.spines["top"].set_visible(False); m_ax.spines["right"].set_visible(False)
-    mx = np.linspace(6.9, 8.65, 40)
+    mx = np.linspace(6.7, 8.65, 40)
     show(m_ax.fill_between(mx, mx - 0.2, mx + 0.2, color=cm.C["good"], lw=0), t_d1 + 0.4, 0.18)
     show(m_ax.plot(mx, mx, color=cm.TEXT, lw=1.4, ls="--")[0], t_d1 + 0.4)
     if "ais_true_mw" in det:
         tmw = det["ais_true_mw"]
         rmw = det["ais_rec_mw"]
-        # Subsample cleanly with slight jitter on discrete library steps so density is visible
-        idx = rng.choice(len(tmw), size=min(120, len(tmw)), replace=False)
+        idx = rng.choice(len(tmw), size=min(130, len(tmw)), replace=False)
         tx_p = tmw[idx] + rng.normal(0, 0.025, size=len(idx))
         ty_p = rmw[idx] + rng.normal(0, 0.025, size=len(idx))
-        in_b = np.abs(rmw[idx] - tmw[idx]) <= 0.2
-        show(m_ax.scatter(tx_p[in_b], ty_p[in_b], s=18, color=cm.C["good"], edgecolor="none", zorder=5), t_d1 + 0.7, 0.75)
-        show(m_ax.scatter(tx_p[~in_b], ty_p[~in_b], s=18, color=cm.C["moderate"], edgecolor="none", zorder=4), t_d1 + 0.7, 0.65)
+        hi_mw = tmw[idx] >= 7.5
+        show(m_ax.scatter(tx_p[hi_mw], ty_p[hi_mw], s=18, color=cm.C["good"], edgecolor="none", zorder=5), t_d1 + 0.7, 0.78)
+        show(m_ax.scatter(tx_p[~hi_mw], ty_p[~hi_mw], s=18, color=cm.MUTED, edgecolor="none", zorder=4), t_d1 + 0.7, 0.48)
+    show(m_ax.text(6.76, 8.55, "Grey (Mw < 7.5):\nnear false-alarm floor", fontsize=cm.FS_LABEL - 4,
+                   color=cm.MUTED, ha="left", va="top", linespacing=1.15), t_d1 + 0.8)
     m_ax.set_xlabel("True planted Mw", fontsize=cm.FS_LABEL - 2, labelpad=2)
     m_ax.set_ylabel("Recovered Mw", fontsize=cm.FS_LABEL - 2, labelpad=2)
     for a in [m_ax.xaxis.label, m_ax.yaxis.label, *m_ax.spines.values(), *m_ax.get_xticklabels(),
               *m_ax.get_yticklabels(), *m_ax.get_xticklines(), *m_ax.get_yticklines()]:
         show(a, t_d1 + 0.3)
-    show(dcard1.text(0.73, 0.065, f"Error: ±{mw_err:.2f} Mw ({w02:.0f}% within ±0.2)",
+    show(dcard1.text(0.74, 0.075, f"±{mw_err:.2f} Mw ({w02:.0f}% within ±0.2)",
                      ha="center", va="center", fontsize=cm.FS_LABEL - 2, color=cm.C["good"], weight="bold"), t_d1 + 0.8)
 
     # Bottom-right card: Test B — Quiet-day false-alarm calibration (500 unseen days vs 1% target)
     t_d2 = 9.8
-    dcard2 = cm.card(fig, (XR, 0.115, 0.44, 0.265))
+    dcard2 = cm.card(fig, (XR, 0.115, 0.445, 0.225))
     show(dcard2.patches[0], t_d2)
-    show(dcard2.text(0.035, 0.88, "Test B: Quiet-day false-alarm check (500 unseen no-tsunami days)",
+    show(dcard2.text(0.03, 0.88, "Test B: Quiet-day false-alarm check (500 unseen no-tsunami days)",
                      fontsize=cm.FS_LABEL + 1, weight="bold", color=cm.TEXT, va="center"), t_d2)
 
     far_rows = det.get("far_rows") or [
@@ -263,7 +279,7 @@ def build(cut, ctx):
         ("Precise GPS", 0.006, cm.C["gps"]),
         ("AIS drift (100 km cap)", 0.016, cm.C["signal"]),
     ]
-    fax = fig.add_axes((XR + 0.145, 0.195, 0.265, 0.125))
+    fax = fig.add_axes((XR + 0.145, 0.185, 0.27, 0.105))
     fax.set_facecolor("none")
     ys = np.arange(len(far_rows))[::-1]
     vals = [100 * r[1] for r in far_rows]
@@ -276,9 +292,9 @@ def build(cut, ctx):
     fax.spines["top"].set_visible(False); fax.spines["right"].set_visible(False)
     fax.tick_params(axis="y", length=0, pad=6)
     show(fax.axvline(far_tgt, color=cm.C["alarm"], lw=2.0, ls="--", zorder=4), t_d2 + 0.3)
-    show(fax.text(far_tgt + 0.05, len(far_rows) - 0.45, f"{far_tgt:g}% target", color=cm.C["alarm"],
+    show(fax.text(far_tgt + 0.05, len(far_rows) - 0.42, f"{far_tgt:g}% target", color=cm.C["alarm"],
                   fontsize=cm.FS_LABEL - 2, weight="bold", ha="left", va="top"), t_d2 + 0.3)
-    bars = fax.barh(ys, vals, height=0.52, color=cols, zorder=3)
+    bars = fax.barh(ys, vals, height=0.55, color=cols, zorder=3)
     for b, v, c in zip(bars, vals, cols):
         show(b, t_d2 + 0.5)
         show(fax.text(v + 0.06, b.get_y() + b.get_height() / 2, f"{v:.1f}%", va="center", ha="left",
@@ -286,8 +302,8 @@ def build(cut, ctx):
     for a in [*fax.spines.values(), *fax.get_xticklabels(), *fax.get_yticklabels(), *fax.get_xticklines()]:
         show(a, t_d2 + 0.3)
 
-    show(dcard2.text(0.035, 0.075,
-                     f"Holdout false alarms: {far_lo:.1f}–{far_hi:.1f}% across all sets (calibrated to {far_tgt:g}% target)",
+    show(dcard2.text(0.03, 0.09,
+                     f"Calibrated to {far_tgt:g}% on separate days; the AIS 100 km set comes out at {far_a100:.1f}%.",
                      fontsize=cm.FS_LABEL - 2, color=cm.MUTED, va="center"), t_d2 + 0.9)
 
     if FAKE:
