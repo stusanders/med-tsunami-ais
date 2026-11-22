@@ -72,6 +72,9 @@ def build(cut, ctx):
                        rect=(0.1, 0.15, 0.8, 0.65))
         return cm.Scene(fig, lambda t: None, still_t=dur - 1.0)
     single_txt, net_txt, thr = thresholds(meta)
+    if single_txt and net_txt:
+        cm.set_title(fig, chrome, f"Comparison with previous work: single-ship rule false-alarms on {single_txt} "
+                                  f"of quiet days; our network on {net_txt}")
 
     ax = cm.map_axes(fig, (0.012, 0.085, 0.615, 0.78))
     e0 = cm.aoi_extent()

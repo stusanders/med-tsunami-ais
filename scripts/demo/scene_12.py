@@ -75,10 +75,24 @@ def build(cut, ctx):
         a.set_alpha(0)
         return a
 
-    show(fig.text(0.04, 0.80, HEADING, fontsize=cm.FS_H2, weight="bold", color=cm.TEXT, va="center"), 0.5)
-
     lad = cm.load_json("outputs/reshaping_ladder.json")
     rows = {int(r["row"]): r for r in (lad or {}).get("rows", [])}
+
+    # heading: what "the full experiment" is (experiment_counts: n_trials = n_truth x n_strata x n_draws_per_stratum)
+    ec = (lad or {}).get("experiment_counts", {})
+    n_trials = ec.get("n_trials")
+    heading = HEADING if not n_trials else f"{HEADING}: {n_trials / 1e6:.1f} million simulated tests"
+    show(fig.text(0.04, 0.815, heading, fontsize=cm.FS_H2, weight="bold", color=cm.TEXT, va="center"), 0.5)
+    per_quake = ec.get("n_strata", 0) * ec.get("n_draws_per_stratum", 0)
+    if n_trials and ec.get("n_truth") and per_quake and ec["n_truth"] * per_quake == n_trials:
+        show(fig.text(0.04, 0.772, f"{ec['n_truth']:,} earthquakes × {per_quake:,} combinations of ship traffic, noise, "
+                                   f"weather and sensor = {n_trials:,} tests",
+                      fontsize=cm.FS_SMALL, color=cm.MUTED, va="center"), 0.9)
+
+    # title: the takeaway, from the same rows as the bars
+    if all(rows.get(rid) for rid, _, _ in RUNGS):
+        slow, cpu, gpu = (fmt_duration(float(rows[rid]["total_s"])).replace("about ", "") for rid, _, _ in RUNGS)
+        cm.set_title(fig, chrome, f"Reshaping cuts ~{slow} to {cpu} on a laptop; a GPU brings it to ~{gpu}")
     X_LO, X_HI = 1800.0, 3.5 * YEAR_S                                # log axis: 10 minutes .. 10 years
     BX, BW = 0.04, 0.92
     bars = []

@@ -207,15 +207,17 @@ def build(cut, ctx):
         for x in arts:
             x.set_alpha(a)
 
+    BEAT_TITLES = ["Mediterranean: 3rd-largest tsunami record (~1 major event/century)",
+                   "Where current instruments are",
+                   "Warnings are inferred from the earthquake, then confirmed at the coast"]
+    beat_fs = [cm.set_title(fig, chrome, s).get_fontsize() for s in BEAT_TITLES]
+
     def update(t):
         veil.set_alpha(1 - cm.ramp(t, 0.0, 0.7))
         chrome["caption"].set_alpha(cm.fade(t, 0.5, dur=0.8))
-        if T["A"] is not None and t < tB - 0.15:
-            chrome["title"].set_text("Mediterranean: 3rd-largest tsunami record (~1 major event/century)")
-        elif t < tC - 0.15:
-            chrome["title"].set_text("Where current instruments are")
-        else:
-            chrome["title"].set_text("Without offshore sensors, seismic alerts cannot be confirmed at sea")
+        beat = 0 if (T["A"] is not None and t < tB - 0.15) else (1 if t < tC - 0.15 else 2)
+        chrome["title"].set_text(BEAT_TITLES[beat])
+        chrome["title"].set_fontsize(beat_fs[beat])
         a_leg = cm.fade(t, t_g, dur=0.5) * (1 - cm.ramp(t, tC, tC + 0.5))
         set_alpha(leg_arts, a_leg)
 

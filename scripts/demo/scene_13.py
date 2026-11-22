@@ -140,8 +140,8 @@ def _join_names(regions):
     return ", ".join(names[:-1]) + " and " + names[-1]
 
 
-def key_lines(ev, cfg):
-    """The three key-number lines of the script, generated from the sweep (see the module docstring)."""
+def _drift_groups(ev, cfg):
+    """[[Mw, 'from' | 'only near' | 'not up to', [regions]], ...] for AIS calm, smallest Mw first."""
     order = _arc_order(cfg)
     cr = region_crossing(ev, "ais", "calm")
     items = []
@@ -158,6 +158,38 @@ def key_lines(ev, cfg):
             groups[-1][2].append(r)
         else:
             groups.append([v, kind, [r]])
+    return groups
+
+
+def key_bullets(ev, cfg):
+    """Short on-screen versions of key_lines (same numbers): [(text, 'ais' | 'gps'), ...]."""
+    out = []
+    conf = [g for g in _drift_groups(ev, cfg) if g[1] != "not up to"]
+    if conf:
+        lo, hi = conf[0], conf[-1]
+        txt = f"Ship drift: from Mw {lo[0]:g} ({_join_names(lo[2])})"
+        if hi is not lo:
+            txt += f" up to Mw {hi[0]:g} ({_join_names(hi[2])})"
+        out.append((txt, "ais"))
+    names, regions = historic_not_detected(cfg)
+    if names:
+        where = (REGION_NAME.get(regions[0], regions[0].title()) + " ") if len(regions) == 1 else ""
+        out.append((f"Real {where}faults replayed ({', '.join(event_label(n) for n in names)}): not detected", "ais"))
+    pb = pct_before_first_gauge(ev, "ais", "calm")
+    if len(pb):
+        out.append((f"Ship drift beats the first tide gauge in at most {pb.max():.0f}% of detections", "ais"))
+    cg = region_crossing(ev, "gps", "calm")
+    xs = [c["x"] for c in cg.values()]
+    pg = pct_before_first_gauge(ev, "gps", "calm")
+    if xs and all(np.isfinite(xs)) and len(pg):
+        out.append((f"Precise GPS: from Mw {_half(max(xs))} everywhere, first in {pg.min():.0f} to {pg.max():.0f}% "
+                    f"of detections", "gps"))
+    return out
+
+
+def key_lines(ev, cfg):
+    """The three key-number lines of the script, generated from the sweep (see the module docstring)."""
+    groups = _drift_groups(ev, cfg)
     phrases = []
     for v, kind, rs in groups:
         what = f"not confirmed up to Mw {v:g}" if kind == "not up to" else f"{kind} Mw {v:g}"
@@ -315,7 +347,7 @@ def build(cut, ctx):
             ec = np.tile(mcolors.to_rgba(cm.BG), (len(mw), 1)); ec[~ok] = mcolors.to_rgba("#9AA6B8", 0.95)
             st2.append((fc, ec))
         m2_sc = ax2.scatter(pos.lon_deg, pos.lat_deg, s=95, facecolors=st2[0][0], edgecolors=st2[0][1], lw=1.4, zorder=6)
-        lines = key_lines(ev, cfg)
+        bullets = key_bullets(ev, cfg)
         # Discrete 4-tier legend pills under the map
         lbl = fig.text(x_l, 0.148, "Smallest Mw confirmed:", fontsize=cm.FS_LABEL, color=cm.TEXT, weight="bold", va="center")
         tier_specs = [
@@ -338,7 +370,7 @@ def build(cut, ctx):
                         color=cm.MUTED, va="center")
         cb_arts.extend([*ring.collections, nlab])
     else:
-        lines = ("", "", "")
+        bullets = []
         cb_arts = []
         pax = fig.add_axes(ax2.get_position().bounds, zorder=5); pax.patch.set_visible(False)
         for a in cm.placeholder(pax, "The smallest earthquake ships can confirm, by source"):
@@ -349,24 +381,29 @@ def build(cut, ctx):
     # ------------------------------------------------------------ Right column: comparison & key takeaways
     rcard = cm.card(fig, (x_r, 0.56, 0.37, 0.25))
     show(rcard.patches[0], t_tabs[0])
-    show(rcard.text(0.05, 0.87, "Confirmed positions by condition (out of 141)", fontsize=cm.FS_SMALL - 1,
+    n_pos = counts[0][2] if counts else 0
+    show(rcard.text(0.05, 0.87, f"Source positions confirmed (out of {n_pos})", fontsize=cm.FS_SMALL,
                     weight="bold", color=cm.TEXT, va="center"), t_tabs[0])
     for idx, (lab, n_ok, n_tot, n_small) in enumerate(counts):
         yr = 0.68 - idx * 0.19
         col = cm.C["gps"] if "GPS" in lab else (cm.C["good"] if "Calm" in lab else (cm.C["moderate"] if "Moderate" in lab else cm.C["bad"]))
-        show(rcard.text(0.05, yr, lab, fontsize=cm.FS_LABEL, weight="bold", color=col, va="center"), t_tabs[idx])
-        detail = f"{n_ok}/{n_tot} sources (all ≤ Mw 7.1)" if "GPS" in lab else f"{n_ok}/{n_tot} sources (Mw 7.6–8.6 only)"
-        show(rcard.text(0.95, yr, detail, fontsize=cm.FS_LABEL - 1, color=cm.TEXT, ha="right", va="center"), t_tabs[idx])
+        show(rcard.text(0.05, yr, lab, fontsize=cm.FS_SMALL, weight="bold", color=col, va="center"), t_tabs[idx])
+        show(rcard.text(0.95, yr, f"{n_ok}", fontsize=cm.FS_SMALL + 2, weight="bold", color=cm.TEXT, ha="right",
+                        va="center"), t_tabs[idx])
 
     import textwrap
-    y = 0.515
-    for line, t_in, col in zip(lines, (t_l1, t_l2, t_l3), (cm.TEXT, cm.TEXT, cm.C["gps"])):
-        if not line:
-            continue
-        show(fig.text(x_r, y, "•", fontsize=cm.FS_SMALL - 1, color=col, va="top"), t_in)
-        tt = show(fig.text(x_r + 0.016, y, "\n".join(textwrap.wrap(line, 48)), fontsize=cm.FS_LABEL,
-                           color=cm.TEXT, va="top", linespacing=1.18), t_in)
-        y -= tt.get_window_extent(rend).height / cm.H_PX + 0.015
+    y = 0.51
+    n_ais = 0
+    for line, op in bullets:
+        if op == "gps":
+            t_in, col = t_l3, cm.C["gps"]
+        else:
+            t_in, col = (t_l1, t_l1 + T(1.0), t_l2)[min(n_ais, 2)], cm.TEXT
+            n_ais += 1
+        show(fig.text(x_r, y, "•", fontsize=cm.FS_SMALL, color=col, va="top"), t_in)
+        tt = show(fig.text(x_r + 0.016, y, "\n".join(textwrap.wrap(line, 46)), fontsize=cm.FS_SMALL,
+                           color=col, va="top", linespacing=1.2), t_in)
+        y -= tt.get_window_extent(rend).height / cm.H_PX + 0.022
 
     for kk in ("title", "section", "num"):
         chrome[kk].set_alpha(0)

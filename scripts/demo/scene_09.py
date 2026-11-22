@@ -64,6 +64,9 @@ def build(cut, ctx):
         f"long after the nearest tide gauges.")
     chrome["caption"].set_linespacing(1.35)
     chrome["caption"].set_position((0.5, 0.042))
+    _fb = gau.get("first_buoy_s")
+    _later = "tide gauges and buoys" if (_fb is not None and _fb / 60.0 < typ_conf) else "tide gauges"
+    cm.set_title(fig, chrome, f"Result: the ship network detects the tsunami, but later than {_later}")
 
     # timing (scene seconds)
     T_CURVE0, T_CURVE1 = 0.8, min(9.0, 0.45 * dur)
@@ -105,22 +108,24 @@ def build(cut, ctx):
             ("First tide gauge", float(typ["first_gauge_med_min"]), cm.C["gauge"],
              f"{st.fmt_min(float(typ['first_gauge_med_min']))} min")]
     if fb is not None:
-        rows.append(("First buoy", fb / 60.0, cm.C["buoy"], f"{st.fmt_min(fb / 60.0)} min (showcase run)"))
+        rows.append(("First buoy", fb / 60.0, cm.C["buoy"], f"{st.fmt_min(fb / 60.0)} min"))
     else:
-        rows.append(("First buoy", None, cm.C["buoy"], "no buoy triggered within 2 hours (showcase run)"))
+        rows.append(("First buoy", None, cm.C["buoy"], "none within 2 hours"))
     axt = fig.add_axes((0.20, 0.11, 0.76, 0.195))
     axt.set_xlim(0, 120); axt.set_ylim(-0.6, 2.6)
     axt.set_yticks([]); axt.set_xticks([])
     for sp in axt.spines.values():
         sp.set_visible(False)
     tl_axis = axt.axvline(0, color=cm.FAINT, lw=1.4, alpha=0)
+    fig.text(0.96, 0.34, "Ship network and tide gauge: median day. Buoy: the single run shown above.",
+             fontsize=cm.FS_LABEL - 1, color=cm.MUTED, ha="right", va="center")
     bars = []
     for r, (name, mm, col, txt) in enumerate(rows):
         y = 2 - r
         lab = fig.text(0.185, 0.11 + 0.195 * (y + 0.6) / 3.2, name, fontsize=cm.FS_BODY, color=col, weight="bold",
                        ha="right", va="center", alpha=0)
         bar = axt.barh([y], [0], height=0.62, color=col, alpha=0)
-        inside = mm is not None and mm > 75
+        inside = False                     # every value label sits outside its bar, same style
         val = axt.text(0, y, txt, fontsize=cm.FS_SMALL + 2, color=cm.BG if inside else cm.TEXT,
                        ha="right" if inside else "left", va="center", alpha=0, fontweight="bold")
         bars.append((lab, bar[0], val, mm, inside))

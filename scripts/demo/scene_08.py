@@ -104,6 +104,9 @@ def build(cut, ctx):
     else:
         caption = "The wave barely moves deep water but speeds up over shallow shelves, so mainly ships there feel it."
     fig, chrome = cm.new_figure(SCENE, caption=caption)
+    if sa.get("n_above") and sa.get("above_n_depth_lt_200") is not None:
+        cm.set_title(fig, chrome, f"Hellenic Arc, Mw 8.6: {sa['above_n_depth_lt_200']} of the {sa['n_above']} ships "
+                                  f"that feel the wave sit in medium-depth water (under 200 m)")
     for k in chrome.values():
         k.set_zorder(20)
 
@@ -242,21 +245,21 @@ def build(cut, ctx):
     key = cm.card(fig, (0.435, 0.730, 0.275, 0.128))
     key.set_zorder(8)
     key.text(0.05, 0.82, "What you're seeing", fontsize=cm.FS_LABEL + 1, weight="bold", color=cm.TEXT, va="center")
-    key.text(0.05, 0.58, "Cyan shading: shallow shelves (<200 m)", fontsize=cm.FS_LABEL - 1, color=SHELF_COL, weight="bold", va="center")
+    key.text(0.05, 0.58, "Cyan shading: medium-depth water (<200 m)", fontsize=cm.FS_LABEL - 1, color=SHELF_COL, weight="bold", va="center")
     key.text(0.05, 0.35, "Orange/blue: open-sea wave height", fontsize=cm.FS_LABEL - 1, color=cm.MUTED, va="center")
     key.text(0.05, 0.12, "Glowing dots: ships where drift > noise", fontsize=cm.FS_LABEL - 1, color=cm.C["signal"], va="center")
 
     # shallow-shelf labels next to the clusters of ships that light up (placed on land beside them)
     halo_fx = [pe.withStroke(linewidth=3.5, foreground=cm.BG)]
     shelf_lbls = [
-        ax.annotate("Aegean shelves (<200 m):\n31 of 34 triggered ships sit here",
+        ax.annotate("Aegean, medium depth (<200 m):\n31 of 34 triggered ships sit here",
                     xy=(25.4, 37.1), xytext=(27.3, 38.2),
                     fontsize=cm.FS_LABEL, color=SHELF_COL, weight="bold", ha="left", va="center",
                     zorder=9, path_effects=halo_fx, alpha=0.0,
                     arrowprops=dict(arrowstyle="-|>", color=SHELF_COL, lw=1.8, shrinkA=2, shrinkB=2)),
-        ax.text(20.1, 31.55, "Libyan shelf (<200 m)", fontsize=cm.FS_LABEL, color=SHELF_COL, weight="bold",
+        ax.text(20.1, 31.55, "Off Libya (<200 m)", fontsize=cm.FS_LABEL, color=SHELF_COL, weight="bold",
                 ha="center", va="center", zorder=9, path_effects=halo_fx, alpha=0.0),
-        ax.text(30.3, 31.2, "Nile shelf (<200 m)", fontsize=cm.FS_LABEL, color=SHELF_COL, weight="bold",
+        ax.text(30.3, 31.2, "Off the Nile delta (<200 m)", fontsize=cm.FS_LABEL, color=SHELF_COL, weight="bold",
                 ha="center", va="center", zorder=9, path_effects=halo_fx, alpha=0.0),
     ]
 

@@ -95,22 +95,22 @@ class SceneSpec:
 SCENES = {s.num: s for s in [
     SceneSpec(1, "title", "Intro", "Ships as a Tsunami Network", 9, 9),
     SceneSpec(2, "warning_gap", "Problem", "Tsunami warnings today are mostly inferred from seismic sensors", 22, 15),
-    SceneSpec(3, "previous_work", "Problem & Opportunity", "The Problem & The Opportunity: Can ships fill the offshore warning gap?", 18, None),
-    SceneSpec(4, "ships_as_sensors", "Solution", "We measure a tsunami from the drift between a ship's heading and its actual course", 20, 20),
+    SceneSpec(3, "previous_work", "Problem & Opportunity", "Can the ~700 ships already at sea become a live tsunami sensor network?", 18, None),
+    SceneSpec(4, "ships_as_sensors", "Solution", "A tsunami pushes ships sideways off their heading, far harder in shallow water", 20, 20),
     SceneSpec(5, "data", "Data", "Real inputs, simulated events", 15, None),
     SceneSpec(6, "method", "Method", "We simulate each quake, add realistic ship noise, and test if the fleet detects it", 25, 15),
-    SceneSpec(7, "reshaping", "Parallelism", "GPU reshaping: 3 mechanisms turn a 3-year experiment into 1 hour on a GPU", 16, 16),
-    SceneSpec(8, "tsunami_crosses", "Simulation", "Hellenic Arc, Mw 8.6: only ships on shallow shelves feel the wave above their noise", 20, 20),
-    SceneSpec(9, "network_confirms", "Simulation", "The network confirms the tsunami, but after the tide gauges",
+    SceneSpec(7, "reshaping", "Parallelism", "Three reshapings, each giving the same answer, let one GPU score every test", 16, 16),
+    SceneSpec(8, "tsunami_crosses", "Simulation", "Hellenic Arc, Mw 8.6: only ships in medium-depth water feel the wave above their noise", 20, 20),
+    SceneSpec(9, "network_confirms", "Results", "Result: the ship network detects the tsunami, but later than tide gauges",
               20, 20),
-    SceneSpec(16, "precise_gps", "Results", "Precise GPS confirms tsunamis in minutes, beating coastal tide gauges", 13, 13, "09b"),
+    SceneSpec(16, "precise_gps", "Results", "Ships above the source rise with the seafloor, so precise GPS beats tide gauges", 13, 13, "09b"),
     SceneSpec(17, "not_always", "Simulation", "With no ships on the shallow Cretan shelf, a Mw 8.1 tsunami goes unconfirmed", 13, None, "09c"),
-    SceneSpec(10, "is_it_right", "Results", "How we verified the results: 7 physics checks and planted tsunami tests", 20, 20),
-    SceneSpec(11, "one_vs_network", "Results", "Networking the fleet cuts false alarms from every quiet day to about 1 in 100", 11, 11),
-    SceneSpec(12, "speed", "Parallelism", "Meaningful speedup: reshaping turns a 3-year experiment into one hour on a GPU", 18, 18),
-    SceneSpec(13, "where_ships_help", "Results", "Today's ship drift confirms the largest quakes; precise GPS confirms from Mw 7", 23, 20),
-    SceneSpec(14, "real_earthquake", "Verification", "Samos 2020 (Mw 7.0) verification: first 2 hours match Kos gauge (6.4 vs 6.7 cm)", 16, None),
-    SceneSpec(15, "conclusion", "Conclusion", "Policy: run fleet detection on live AIS today; add live precise GPS on key corridors", 20, 20),
+    SceneSpec(10, "is_it_right", "Results", "Verified: solver matches Samos 2020 gauges; detector recovers planted quakes", 20, 20),
+    SceneSpec(11, "one_vs_network", "Results", "Comparison with previous work: networking the fleet cuts false alarms to about 1 in 100 days", 11, 11),
+    SceneSpec(12, "speed", "Parallelism", "Reshaping cuts years to hours on a laptop; a GPU brings the full run to about an hour", 18, 18),
+    SceneSpec(13, "where_ships_help", "Results", "Ship drift confirms only the largest quakes; precise GPS from Mw 7, usually first", 23, 20),
+    SceneSpec(14, "real_earthquake", "Verification", "Samos 2020 (Mw 7.0): too small for ship drift; simulated wave matches the Kos gauge", 16, None),
+    SceneSpec(15, "conclusion", "Conclusion", "Policy Recommendation: run fleet detection on live AIS today; add live precise GPS on key corridors", 20, 20),
     SceneSpec(18, "closing", "Open Source", "Ships as a Tsunami Network", 6, 6, "end"),
 ]}
 ORDER = [1, 2, 3, 4, 5, 6, 7, 12, 10, 14, 8, 9, 11, 13, 16, 15, 18]
@@ -187,6 +187,10 @@ FS_BODY = 26
 FS_SMALL = 20
 FS_CAPTION = 19
 FS_LABEL = 17
+
+# The takeaway line lives in the title (large, top of frame). The small footer line that used to carry
+# it is hidden; set True to bring the footers back.
+SHOW_FOOTER = False
 
 
 def apply_style():
@@ -273,7 +277,15 @@ def new_figure(num: int, caption: str | None = None, show_title: bool = True):
         fit_text_width(fig, chrome["title"], 0.95)
     chrome["caption"] = fig.text(0.5, 0.03, caption or "", fontsize=FS_CAPTION, color=MUTED,
                                  va="center", ha="center")
+    chrome["caption"].set_visible(SHOW_FOOTER)
     return fig, chrome
+
+
+def set_title(fig, chrome, text, max_w_frac=0.95):
+    """Replace the scene title (e.g. with a takeaway built from data) and refit it to the frame width."""
+    chrome["title"].set_text(text)
+    chrome["title"].set_fontsize(FS_TITLE)
+    return fit_text_width(fig, chrome["title"], max_w_frac)
 
 
 def fit_text_width(fig, txt, max_w_frac, min_fs=20):

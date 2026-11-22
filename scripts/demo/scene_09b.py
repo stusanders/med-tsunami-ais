@@ -54,6 +54,8 @@ def build(cut, ctx):
 
     gps, typ = meta["gps"], meta["typical"]
     noise_m = float(ctx.cfg["gps"]["noise_sd_m"])
+    # source of the GPS noise level (config.yaml gps.noise_sd_m): "Foster and Thomas (2025)" -> "Foster and Thomas, 2025"
+    gps_cite = cm.load_cards().get("foster_thomas", {}).get("cite", "Foster and Thomas (2025)").replace(" (", ", ").rstrip(")")
     T_CURVE0, T_MID, T_CURVE1 = 0.8, 3.8, 5.8
     M_MID = 5.0
     T_LBL = [0.3, 3.2, 4.2, 5.5]
@@ -136,7 +138,7 @@ def build(cut, ctx):
     box_txt = box.text(
         0.5, 0.5,
         f"Caveat: unlike live AIS broadcasts, precise vertical GPS is logged onboard today (not broadcast live).\n"
-        f"Assumes instant seafloor uplift and {100 * noise_m:.0f} cm GPS height noise.",
+        f"Assumes instant seafloor uplift and {100 * noise_m:.0f} cm GPS height noise ({gps_cite}).",
         fontsize=cm.FS_LABEL + 1, color=cm.TEXT, weight="bold", ha="center", va="center", linespacing=1.3
     )
     box_patch = box.patches[0]

@@ -27,6 +27,11 @@ Scenes 1 to 7 are supported as drafted.
   42.3 / 21.5 / 36.2% for all traffic, 44.8 / 22.6 / 32.6% within 100 km.
 
 ## Things a judge may notice
+- The "about 3 years" bar (speed slide) is not a fair like-for-like comparison. The earlier study (Inazu et al.,
+  2020) only looked at about a dozen ships (13), so the straightforward method was fast enough for it. The 3 years
+  is that method scaled up to our 1.4 million simulated tests, extrapolated from measured per-test timings and
+  never actually run. The like-for-like figure is reshaped laptop against reshaped GPU: about 5.6 hours down to
+  about 1 hour (5.6 times end to end).
 - The quiet-day example's network score peaks at about 125, which is higher than the Mw 8 tsunami's 112.
   Scenes 9 and 11 sit close together, so be ready to explain it (noise sets the floor; this event's signal
   is mostly in deep water).
