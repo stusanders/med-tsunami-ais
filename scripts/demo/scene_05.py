@@ -156,8 +156,9 @@ def build(cut, ctx):
     T_LAYER = dict(zip(("depth", "traffic", "faults", "gauges"), [t + 0.55 for t in T_ITEMS[:4]]))
 
     # ---------------- 2-column summary table below the map ----------------
-    COL_W, ROW_H = 0.445, 0.056
-    COL_X = [0.04, 0.515]
+    COL_W, ROW_H = 0.450, 0.056
+    COL_X = [0.04, 0.510]
+    GIVES_DX = [0.128, 0.175]
     ROW_Y = [0.185, 0.120, 0.055]
     real_arts = []
     slot_centres = []
@@ -178,14 +179,14 @@ def build(cut, ctx):
         arts += _icon(ia, kind)
         arts.append(fig.text(x0 + 0.038, y0 + (ROW_H - 0.006) / 2, f"{src}:", fontsize=cm.FS_SMALL,
                              weight="bold", color=cm.TEXT, va="center", alpha=0.0, zorder=4))
-        arts.append(fig.text(x0 + 0.175, y0 + (ROW_H - 0.006) / 2, gives, fontsize=cm.FS_LABEL + 2,
+        arts.append(fig.text(x0 + GIVES_DX[col_idx], y0 + (ROW_H - 0.006) / 2, gives, fontsize=cm.FS_LABEL + 1,
                              color=cm.TEXT, va="center", alpha=0.0, zorder=4))
         real_arts.append(arts)
 
     # ---------------- animated centre-of-map callout card ----------------
     map_cx = map_x0 + map_w / 2
     map_cy = map_y0 + map_h / 2
-    CW0, CH0 = 0.48, 0.21
+    CW0, CH0 = 0.54, 0.21
     callout_ax = fig.add_axes((map_cx - CW0 / 2, map_cy - CH0 / 2, CW0, CH0), zorder=15)
     callout_ax.set_xlim(0, 1); callout_ax.set_ylim(0, 1); callout_ax.axis("off")
     callout_patch = callout_ax.add_patch(FancyBboxPatch((0.02, 0.04), 0.96, 0.92,
